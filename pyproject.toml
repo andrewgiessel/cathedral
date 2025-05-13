@@ -1,0 +1,145 @@
+[project]
+name = "cathedral"
+version = "0.0.1"
+description = "An implementation of the Church programming language in Hy"
+authors = [{ name = "Andrew Giessel", email = "andrew@growthsignals.com" }]
+readme = "README.md"
+keywords = ['python']
+requires-python = ">=3.11"
+dependencies = [
+    "hy>=1.1.0",
+    "hyrule>=1.0.0",
+    "matplotlib>=3.10.3",
+    "numpy>=2.2.5",
+]
+
+[project.urls]
+Homepage = "https://andrewgiessel.github.io/cathedral/"
+Repository = "https://github.com/andrewgiessel/cathedral"
+Documentation = "https://andrewgiessel.github.io/cathedral/"
+
+[dependency-groups]
+dev = [
+    "pytest>=7.2.0",
+    "pre-commit>=2.20.0",
+    "tox-uv>=1.11.3",
+    "mypy>=0.991",
+    "ruff>=0.6.9",
+    "modal",
+    "ipykernel",
+]
+
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["cathedral"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cathedral", "cathedral.*"]
+
+[tool.mypy]
+files = ["cathedral"]
+disallow_untyped_defs = true
+disallow_any_unimported = true
+no_implicit_optional = true
+check_untyped_defs = true
+warn_return_any = true
+warn_unused_ignores = true
+show_error_codes = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --cov --cov-report term-missing"
+
+[tool.ruff]
+line-length = 120
+fix = true
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    # flake8-2020
+    "YTT",
+    # flake8-bandit
+    "S",
+    # flake8-bugbear
+    "B",
+    # flake8-builtins
+    "A",
+    # flake8-comprehensions
+    "C4",
+    # flake8-debugger
+    "T10",
+    # flake8-simplify
+    "SIM",
+    # isort
+    "I",
+    # mccabe
+    "C90",
+    # pycodestyle
+    "E",
+    "W",
+    # pyflakes
+    "F",
+    # pygrep-hooks
+    "PGH",
+    # pyupgrade
+    "UP",
+    # ruff
+    "RUF",
+    # tryceratops
+    "TRY",
+]
+ignore = [
+    # LineTooLong
+    "E501",
+    # DoNotAssignLambda
+    "E731",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.ruff.format]
+preview = true
+
+[tool.interrogate]
+ignore-init-method = true
+ignore-init-module = false
+ignore-magic = false
+ignore-semiprivate = false
+ignore-private = false
+ignore-property-decorators = false
+ignore-module = false
+fail-under = 100
+exclude = ["setup.py", "docs", "build", "examples"]
+ignore-regex = ["^get$", "^mock_.*", ".*BaseClass.*"]
+verbose = 2
+quiet = false
+whitelist-regex = []
+color = true
+
+[[tool.uv.index]]
+name = "growthsignals"
+url = "https://pkgs.dev.azure.com/growthsignals/_packaging/growthsignals/pypi/simple/"
+publish-url = "https://pkgs.dev.azure.com/growthsignals/_packaging/growthsignals/pypi/upload/"
+
+[tool.bumpversion]
+current_version = "0.0.3"
+parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
+serialize = ["{major}.{minor}.{patch}"]
+search = "{current_version}"
+replace = "{new_version}"
+regex = false
+ignore_missing_version = false
+tag = true
+sign_tags = false
+tag_name = "v{new_version}"
+tag_message = "Bump version: {current_version} → {new_version}"
+allow_dirty = false
+commit = true
+message = "Bump version: {current_version} → {new_version}"
+commit_args = ""

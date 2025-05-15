@@ -1,0 +1,23 @@
+;; Sprinkler example from Goodman et al. 2008
+;; This models the classic Bayes net example: rain & sprinkler causing wet grass
+
+;; Using lex-query for inference
+(lex-query
+  '((grass-is-wet (mem (lambda (day)
+                         (noisy-or
+                           (rain day) 0.9
+                           (sprinkler day) 0.8
+                           0.1))))
+    (rain (mem (lambda (day)
+                 (flip 0.3))))
+    (sprinkler (mem (lambda (day)
+                      (flip 0.5))))
+    (noisy-or (lambda (a astrength b bstrength baserate)
+                (or (and (flip astrength) a)
+                    (and (flip bstrength) b)
+                    (flip baserate)))))
+  '(rain 'day2)
+  '(grass-is-wet 'day2))
+
+;; The result is a sample from P(rain | grass is wet)
+;; We can run this multiple times to estimate this probability 

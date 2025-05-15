@@ -141,3 +141,12 @@ cython_debug/
 
 # locally stored data for data sci projects
 data/*
+
+# macOS system files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db

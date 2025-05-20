@@ -1,3 +1,5 @@
+from functools import reduce
+
 import hy
 from hy.models import Complex, Expression, Float, Integer, List, String, Symbol
 
@@ -17,7 +19,9 @@ class CathedralSyntaxError(CathedralError):
 class CathedralRuntimeError(CathedralError):
     """Exception for Cathedral runtime errors."""
 
-    pass
+    def __init__(self, arg_values, expected_args, *args, **kwargs):
+        message = f"Expected {expected_args} arguments, got {len(arg_values)}"
+        super().__init__(message, *args, **kwargs)
 
 
 class CathedralProcedure:
@@ -40,7 +44,7 @@ class CathedralProcedure:
     def __call__(self, *arg_values):
         """Apply the procedure to arguments."""
         if len(arg_values) != len(self.args):
-            raise CathedralRuntimeError(f"Expected {len(self.args)} arguments, got {len(arg_values)}")
+            raise CathedralRuntimeError(arg_values, self.args)
 
         # Extend the environment with bindings for arguments
         new_env = self.env.copy()
@@ -60,7 +64,8 @@ class CathedralProcedure:
         Only valid for elementary random procedures.
         """
         if not self.is_elementary_random():
-            raise CathedralRuntimeError("Not an elementary random procedure")
+            err = "Not an elementary random procedure"
+            raise CathedralRuntimeError(err)
         return self.dist_func(self.env, arg_values)
 
 
@@ -69,7 +74,8 @@ def parse_church(expr):
     try:
         return hy.read(expr)
     except Exception as e:
-        raise CathedralSyntaxError(f"Failed to parse expression: {expr}") from e
+        err = f"Failed to parse expression: {expr}"
+        raise CathedralSyntaxError(err) from e
 
 
 def eval_church(expr, env):
@@ -87,7 +93,7 @@ def eval_church(expr, env):
         expr = parse_church(expr)
 
     # Constants
-    if isinstance(expr, (Integer, Float, Complex)):
+    if isinstance(expr, Integer | Float | Complex):
         return int(expr) if isinstance(expr, Integer) else float(expr) if isinstance(expr, Float) else complex(expr)
     if expr == Symbol("True"):
         return True
@@ -95,7 +101,7 @@ def eval_church(expr, env):
         return False
     if expr == Symbol("nil"):
         return None
-    
+
     # String literals
     if isinstance(expr, String):
         return str(expr)
@@ -105,7 +111,8 @@ def eval_church(expr, env):
         symbol_str = str(expr)
         if symbol_str in env:
             return env[symbol_str]
-        raise CathedralRuntimeError(f"Undefined variable: {expr}")
+        err = f"Undefined variable: {expr}"
+        raise CathedralRuntimeError(err)
 
     # Special forms
     if isinstance(expr, Expression):
@@ -117,17 +124,20 @@ def eval_church(expr, env):
         # Quote
         if op == Symbol("quote"):
             if len(expr) != 2:
-                raise CathedralSyntaxError("quote requires exactly one argument")
+                err = "quote requires exactly one argument"
+                raise CathedralSyntaxError(err)
             # Just return the quoted expression without evaluating it
             return expr[1]
 
         # Lambda expressions
         if op == Symbol("lambda"):
             if len(expr) < 3:
-                raise CathedralSyntaxError("lambda requires at least 2 arguments: params and body")
+                err = "lambda requires at least 2 arguments: params and body"
+                raise CathedralSyntaxError(err)
             params = expr[1]
-            if not isinstance(params, (List, Expression)):
-                raise CathedralSyntaxError("lambda parameters must be a list")
+            if not isinstance(params, List | Expression):
+                err = "lambda parameters must be a list"
+                raise CathedralSyntaxError(err)
             params = [str(p) for p in params]
             body = expr[2]
             return CathedralProcedure(body, params, env)
@@ -135,7 +145,8 @@ def eval_church(expr, env):
         # If expressions
         if op == Symbol("if"):
             if len(expr) != 4:
-                raise CathedralSyntaxError("if requires exactly 3 arguments: condition, then-expr, else-expr")
+                err = "if requires exactly 3 arguments: condition, then-expr, else-expr"
+                raise CathedralSyntaxError(err)
             cond = eval_church(expr[1], env)
             if cond:
                 return eval_church(expr[2], env)
@@ -145,10 +156,12 @@ def eval_church(expr, env):
         # Define expressions
         if op == Symbol("define"):
             if len(expr) != 3:
-                raise CathedralSyntaxError("define requires exactly 2 arguments: variable and value")
+                err = "define requires exactly 2 arguments: variable and value"
+                raise CathedralSyntaxError(err)
             var = expr[1]
             if not isinstance(var, Symbol):
-                raise CathedralSyntaxError("define's first argument must be a symbol")
+                err = "define's first argument must be a symbol"
+                raise CathedralSyntaxError(err)
             val = eval_church(expr[2], env)
             env[str(var)] = val
             return env
@@ -157,7 +170,8 @@ def eval_church(expr, env):
         else:
             fn = eval_church(op, env)
             if not callable(fn):
-                raise CathedralRuntimeError(f"Cannot apply non-procedure: {fn}")
+                err = f"Cannot apply non-procedure: {fn}"
+                raise CathedralRuntimeError(err)
             args = [eval_church(arg, env) for arg in expr[1:]]
             return fn(*args)
 
@@ -192,8 +206,11 @@ def get_primitive(name):
 # Register some basic primitives
 register_primitive("+", lambda *args: sum(args))
 register_primitive("-", lambda a, *args: a - sum(args) if args else -a)
-register_primitive("*", lambda *args: 1 if not args else args[0] * eval("*(*args[1:])") if len(args) > 1 else args[0])
-register_primitive("/", lambda a, *args: a / eval("*(*args)") if args else 1 / a)
+register_primitive(
+    "*",
+    lambda *args: 1 if not args else args[0] if len(args) == 1 else args[0] * reduce(lambda x, y: x * y, args[1:], 1),
+)
+register_primitive("/", lambda a, *args: a if not args else a / reduce(lambda x, y: x * y, args, 1))
 register_primitive("=", lambda *args: all(args[0] == arg for arg in args[1:]))
 register_primitive("<", lambda *args: all(args[i] < args[i + 1] for i in range(len(args) - 1)))
 register_primitive(">", lambda *args: all(args[i] > args[i + 1] for i in range(len(args) - 1)))
@@ -203,13 +220,11 @@ register_primitive("not", lambda x: not x)
 register_primitive("and", lambda *args: all(args))
 register_primitive("or", lambda *args: any(args))
 
-register_primitive("list", lambda *args: list(args))
 register_primitive("pair", lambda a, b: [a, b])
 register_primitive("first", lambda x: x[0])
 register_primitive("rest", lambda x: x[1:])
 register_primitive("cons", lambda x, y: [x] + (y if isinstance(y, list) else [y]))
 register_primitive("append", lambda *args: sum((arg if isinstance(arg, list) else [arg] for arg in args), []))
-register_primitive("length", lambda x: len(x))
 register_primitive("null?", lambda x: len(x) == 0 if isinstance(x, list) else False)
 
 

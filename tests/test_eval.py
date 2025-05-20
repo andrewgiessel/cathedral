@@ -1,7 +1,7 @@
-import pytest
 import hy.models
+import pytest
 
-from cathedral.core.eval import eval_church, create_global_env
+from cathedral.core.eval import create_global_env, eval_church
 from cathedral.primitives.random import register_random_primitives
 
 
@@ -42,7 +42,7 @@ def test_eval_if_expressions(global_env):
     # The condition should be evaluated
     result = eval_church('(if (= 1 1) "yes" "no")', global_env)
     assert result == "yes"
-    
+
     result = eval_church('(if (= 1 2) "yes" "no")', global_env)
     assert result == "no"
 
@@ -89,13 +89,33 @@ def test_eval_quote(global_env):
     # For quote, we expect to get back the actual Hy model object, not a string
     quoted_42 = eval_church("'42", global_env)
     assert isinstance(quoted_42, hy.models.Integer)
-    
+
     quoted_list = eval_church("'(1 2 3)", global_env)
     assert isinstance(quoted_list, hy.models.Expression)
-    
+
     quoted_expr = eval_church("'(+ 1 2)", global_env)
     assert isinstance(quoted_expr, hy.models.Expression)
 
     # quote should prevent evaluation
     quoted_if = eval_church("'(if True 1 2)", global_env)
     assert isinstance(quoted_if, hy.models.Expression)
+
+
+# Test that our evaluation matches Hy's evaluation for basic expressions
+def test_eval_matches_hy(global_env):
+    """Test that our evaluation matches Hy's native evaluation."""
+    expressions = ["42", "'foo", "(+ 1 2)", "(* 3 4)", "[1 2 3)", "((lambda (x) (* x 2)) 21)"]
+
+    for expr in expressions:
+        print(f"Testing {expr}")
+        cathedral_result = eval_church(expr, global_env)
+        hy_result = hy.eval(hy.read(expr))
+        assert cathedral_result == hy_result, f"Mismatch for {expr}: Cathedral={cathedral_result}, Hy={hy_result}"
+
+    # Test nested expressions
+    expr = "(+ (* 2 3) (- 10 5))"
+    assert eval_church(expr, global_env) == hy.eval(hy.read(expr))
+
+    # Test boolean operations
+    expr = "(and (> 5 3) (< 2 4))"
+    assert eval_church(expr, global_env) == hy.eval(hy.read(expr))

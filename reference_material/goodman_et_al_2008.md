@@ -28,7 +28,7 @@ Church expressions have the form:
 expression ::== c | x | (e_1, e_2) | (lambda (x...) e) | (if e_1 e_2 e_3) | (define x e) | (quote e)
 ```
 
-Here x stands for a variable (from a countable set of variable symbols), ei for expressions, and c for a (primitive) constant. (We often write 'e as shorthand for `(quote e)`.)
+Here x stands for a variable (from a countable set of variable symbols), e_i for expressions, and c for a (primitive) constant. (We often write 'e as shorthand for `(quote e)`.)
 
 The constants include primitive data types (nil, Boolean, char, integer, fixed-precision real, etc.), and standard functions to build data structures (notably `pair`, `first`, and `rest` for lists) and manipulate basic types (e.g. `and`, `not`)[^1]. As in most programming languages, all primitive types are countable; real numbers are approximated by either fixed- or floating-precision arithmetic. A number of standard (deterministic) functions, such as the higher-order function `map`, are provided as a standard library, automatically defined in the global environment. Other standard Scheme constructs are provided—such as `(let ((a a-def) (b b-def) ...) body)`, which introduces names that can be used in body, and is sugar for nested lambdas.
 
@@ -461,24 +461,25 @@ A number of the more unusual features of Church as a stochastic programming lang
 Probabilistic models and stochastic algorithms are finding increasingly widespread use throughout artificial intelligence and cognitive science, central to areas as diverse as vision, planning, and natural language understanding. As their usage grows and becomes more intricate, so does the need for formal languages supporting model exchange, reuse, and machine execution. We hope Church represents a significant step toward this goal.
 
 References
-[1] H. Abelson and G. Sussman. Structure and Interpretation of Computer Programs. MIT Press, 1996.
-[2] M.J. Beal, Z. Ghahramani, and C.E. Rasmussen. The infinite hidden Markov model. NIPS 14, 2002.
-[3] K. A. Bonawitz. Composable Probabilistic Inference with Blaise. PhD thesis, MIT, 2008.
-[4] A. Church. A Set of Postulates for the Foundation of Logic. The Annals of Mathematics, 33(2):346–366, 1932.
-[5] M. Johnson, T. Griffiths, and S. Goldwater. Adaptor grammars: A framework for specifying compositional nonparametric Bayesian models. NIPS 19, 2007.
-[6] R. Kelsey, W. Clinger, and J. Rees (eds.). Revised5 Report on the Algorithmic Language Scheme. HigherOrder and Symbolic Computation, 11(1):7–105, 1998.
-[7] C. Kemp, J.B. Tenenbaum, T.L. Griffiths, T. Yamada, and N. Ueda. Learning systems of concepts with an infinite relational model. Proc. 21st Natl Conf. Artif. Intell., AAAI Press, 2006.
-[8] P. Liang, S. Petrov, M.I. Jordan, and D. Klein. The Infinite PCFG using Hierarchical Dirichlet Processes. Proc. EMNLP-CoNLL, 2007.
-[9] D.J. Lunn, A. Thomas, N. Best, and D. Spiegelhalter. WinBUGS-A Bayesian modelling framework: Concepts, structure, and extensibility. Statistics and Computing, 10(4):325–337, 2000.
-[10] D. McAllester, B. Milch, and N. D. Goodman. Random-world semantics and syntactic independence for expressive languages. Technical Report MIT-CSAIL-TR-2008-025, Massachusetts Institute of Technology, 2008.
-[11] J. McCarthy. A Basis for a Mathematical Theory of Computation. In Computer Programming and Formal Systems, pages 33–70, 1963.
-[12] B. Milch, B. Marthi, S. Russell, D. Sontag, D.L. Ong, and A. Kolobov. BLOG: Probabilistic models with unknown objects. Proc. IJCAI, 2005.
-[13] S. Muggleton. Stochastic logic programs. In L. de Raedt, editor, Advances in Inductive Logic Programming, pages 254–264. IOS Press, 1996.
-[14] A. Pfeffer. IBAL: A probabilistic rational programming language. Proc. IJCAI, 2001.
-[15] J. Pitman. Combinatorial stochastic processes, 2002. Notes for Saint Flour Summer School.
-[16] A. Radul. Report on the probabilistic language scheme. Technical Report MIT-CSAIL-TR-2007-059, Massachusetts Institute of Technology, 2007.
-[17] J.C. Reynolds. Definitional interpreters for higher-order programming. ACM Annual Conference, pages 717–740, 1972.
-[18] M. Richardson and P. Domingos. Markov logic networks. Machine Learning, 62(1):107–136, 2006.
-[19] T. Sato and Y. Kameya. PRISM: A symbolic-statistical modeling language. In International Joint Conference on Artificial Intelligence, 1997.
-[20] J. Sethuraman. A Constructive definition of Dirichlet priors. Statistica Sinica, 4, 1994.
-[21] M. Toussaint, S. Harmeling, and A. Storkey. Probabilistic inference for solving (PO)MDPs. Technical Report EDI-INF-RR-0934, University of Edinburgh, 2006.
+
+1. H. Abelson and G. Sussman. Structure and Interpretation of Computer Programs. MIT Press, 1996.
+2. M.J. Beal, Z. Ghahramani, and C.E. Rasmussen. The infinite hidden Markov model. NIPS 14, 2002.
+3. K. A. Bonawitz. Composable Probabilistic Inference with Blaise. PhD thesis, MIT, 2008.
+4. A. Church. A Set of Postulates for the Foundation of Logic. The Annals of Mathematics, 33(2):346–366, 1932.
+5. M. Johnson, T. Griffiths, and S. Goldwater. Adaptor grammars: A framework for specifying compositional nonparametric Bayesian models. NIPS 19, 2007.
+6. R. Kelsey, W. Clinger, and J. Rees (eds.). Revised5 Report on the Algorithmic Language Scheme. HigherOrder and Symbolic Computation, 11(1):7–105, 1998.
+7. C. Kemp, J.B. Tenenbaum, T.L. Griffiths, T. Yamada, and N. Ueda. Learning systems of concepts with an infinite relational model. Proc. 21st Natl Conf. Artif. Intell., AAAI Press, 2006.
+8. P. Liang, S. Petrov, M.I. Jordan, and D. Klein. The Infinite PCFG using Hierarchical Dirichlet Processes. Proc. EMNLP-CoNLL, 2007.
+9. D.J. Lunn, A. Thomas, N. Best, and D. Spiegelhalter. WinBUGS-A Bayesian modelling framework: Concepts, structure, and extensibility. Statistics and Computing, 10(4):325–337, 2000.
+10. D. McAllester, B. Milch, and N. D. Goodman. Random-world semantics and syntactic independence for expressive languages. Technical Report MIT-CSAIL-TR-2008-025, Massachusetts Institute of Technology, 2008.
+11. J. McCarthy. A Basis for a Mathematical Theory of Computation. In Computer Programming and Formal Systems, pages 33–70, 1963.
+12. B. Milch, B. Marthi, S. Russell, D. Sontag, D.L. Ong, and A. Kolobov. BLOG: Probabilistic models with unknown objects. Proc. IJCAI, 2005.
+13. S. Muggleton. Stochastic logic programs. In L. de Raedt, editor, Advances in Inductive Logic Programming, pages 254–264. IOS Press, 1996.
+14. A. Pfeffer. IBAL: A probabilistic rational programming language. Proc. IJCAI, 2001.
+15. J. Pitman. Combinatorial stochastic processes, 2002. Notes for Saint Flour Summer School.
+16. A. Radul. Report on the probabilistic language scheme. Technical Report MIT-CSAIL-TR-2007-059, Massachusetts Institute of Technology, 2007.
+17. J.C. Reynolds. Definitional interpreters for higher-order programming. ACM Annual Conference, pages 717–740, 1972.
+18. M. Richardson and P. Domingos. Markov logic networks. Machine Learning, 62(1):107–136, 2006.
+19. T. Sato and Y. Kameya. PRISM: A symbolic-statistical modeling language. In International Joint Conference on Artificial Intelligence, 1997.
+20. J. Sethuraman. A Constructive definition of Dirichlet priors. Statistica Sinica, 4, 1994.
+21. M. Toussaint, S. Harmeling, and A. Storkey. Probabilistic inference for solving (PO)MDPs. Technical Report EDI-INF-RR-0934, University of Edinburgh, 2006.

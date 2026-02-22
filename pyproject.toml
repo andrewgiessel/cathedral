@@ -1,17 +1,14 @@
 [project]
 name = "cathedral"
 version = "0.1.0"
-description = "Church probabilistic programming language implemented in Hy"
+description = "A Pythonic probabilistic programming library inspired by Church and WebPPL"
 authors = [{ name = "Andrew Giessel" }]
 readme = "README.md"
 keywords = ['python']
 license = { text = "MIT" }
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 dependencies = [
-    "hy>=1.1.0",
-    "ipython>=8.12.3",
     "numpy>=1.24.4",
-    "pytest>=8.3.5",
     "scipy",
 ]
 
@@ -27,7 +24,7 @@ dev = [
     "tox-uv>=1.11.3",
     "mypy>=0.991",
     "ruff>=0.6.9",
-    "modal",
+    "ipython>=8.12.3",
     "ipykernel",
 ]
 
@@ -100,10 +97,15 @@ ignore = [
     "E501",
     # DoNotAssignLambda
     "E731",
+    # Avoid specifying long messages outside exception class (overly strict for small projects)
+    "TRY003",
+    # Use ternary operator (less readable for multi-line logic)
+    "SIM108",
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]
+"examples/*" = ["F841", "B007", "RUF005", "RUF015"]
 
 [tool.ruff.format]
 preview = true

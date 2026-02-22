@@ -1,10 +1,12 @@
 """Coin flip inference example.
 
 Given that a coin landed heads, what's the probability it was a fair coin?
-Demonstrates basic Bayesian reasoning with condition().
+Demonstrates Bayesian reasoning with condition() and observe(), and compares
+exact enumeration with sampling-based inference.
 """
 
-from cathedral import condition, flip, infer, model
+from cathedral import condition, flip, infer, model, observe, sample
+from cathedral.distributions import Bernoulli, Beta
 
 
 @model
@@ -19,10 +21,7 @@ def fair_coin():
 @model
 def coin_bias():
     """Infer coin bias from a sequence of observations."""
-    from cathedral import observe, sample
-    from cathedral.distributions import Bernoulli, Beta
-
-    bias = sample(Beta(1, 1))
+    bias = sample(Beta(1, 1), name="bias")
     observations = [True, True, False, True, True, True, False, True]
     for obs in observations:
         observe(Bernoulli(bias), obs)
@@ -30,14 +29,32 @@ def coin_bias():
 
 
 if __name__ == "__main__":
-    print("=== Fair coin inference ===")
-    posterior = infer(fair_coin, method="rejection", num_samples=10000)
-    print(f"P(fair | heads) = {posterior.probability():.3f}")
-    print("  (prior was 0.5, should decrease slightly since biased coin more likely to give heads)")
+    # Exact answer for the discrete model
+    print("=== Fair coin: exact enumeration ===")
+    exact = infer(fair_coin, method="enumerate")
+    p_fair = exact.probability()
+    print(f"P(fair | heads) = {p_fair:.6f}")
+    print(f"  = 0.25 / 0.70 = {0.25 / 0.70:.6f} (analytic)")
 
-    print("\n=== Coin bias inference ===")
-    posterior = infer(coin_bias, method="importance", num_samples=10000)
-    print(f"Inferred bias: {posterior.mean():.3f} +/- {posterior.std():.3f}")
-    lo, hi = posterior.credible_interval(level=0.95)
+    # Compare with sampling methods
+    print("\n=== Fair coin: rejection sampling (10,000 samples) ===")
+    rej = infer(fair_coin, method="rejection", num_samples=10000)
+    print(f"P(fair | heads) = {rej.probability():.4f}")
+
+    print("\n=== Fair coin: single-site MH (10,000 samples) ===")
+    mh = infer(fair_coin, method="mh", num_samples=10000, burn_in=2000)
+    print(f"P(fair | heads) = {mh.probability():.4f}")
+
+    # Continuous bias estimation (can't enumerate -- uses importance/MH)
+    print("\n=== Coin bias: importance sampling (10,000 samples) ===")
+    imp = infer(coin_bias, method="importance", num_samples=10000)
+    print(f"Inferred bias: {imp.mean():.3f} +/- {imp.std():.3f}")
+    lo, hi = imp.credible_interval(level=0.95)
     print(f"95% CI: ({lo:.3f}, {hi:.3f})")
     print("  (observed 6/8 heads, expect bias ~0.75)")
+
+    print("\n=== Coin bias: single-site MH (10,000 samples) ===")
+    mh_bias = infer(coin_bias, method="mh", num_samples=10000, burn_in=2000)
+    print(f"Inferred bias: {mh_bias.mean():.3f} +/- {mh_bias.std():.3f}")
+    lo, hi = mh_bias.credible_interval(level=0.95)
+    print(f"95% CI: ({lo:.3f}, {hi:.3f})")

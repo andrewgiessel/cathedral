@@ -130,10 +130,7 @@ class Posterior:
         """
         values = self._extract_values(key)
         if self._weights is not None:
-            hist: dict[Any, float] = {}
-            for v, w in zip(values, self._weights, strict=False):
-                hist[v] = hist.get(v, 0.0) + w
-            return hist
+            return _weighted_histogram(values, self._weights)
         counts = Counter(values)
         total = sum(counts.values())
         return {k: v / total for k, v in counts.items()}
@@ -177,6 +174,55 @@ def _get_value(result: Any, key: str) -> Any:
     if isinstance(result, dict):
         return result[key]
     return getattr(result, key)
+
+
+def _weighted_histogram(values: list, weights: np.ndarray) -> dict[Any, float]:
+    """Build a weighted histogram, handling unhashable values via linear scan fallback."""
+    hashable_hist: dict[Any, float] = {}
+    unhashable_items: list[tuple[Any, float]] = []
+
+    for v, w in zip(values, weights, strict=False):
+        try:
+            hash(v)
+            hashable_hist[v] = hashable_hist.get(v, 0.0) + w
+        except TypeError:
+            for i, (uv, uw) in enumerate(unhashable_items):
+                if uv == v:
+                    unhashable_items[i] = (uv, uw + w)
+                    break
+            else:
+                unhashable_items.append((v, w))
+
+    result: dict[Any, float] = dict(hashable_hist)
+    for v, w in unhashable_items:
+        result[id(v)] = w
+    if unhashable_items:
+
+        class _UnhashableHistogram(dict):
+            def __init__(self, hashable, unhashable):
+                super().__init__(hashable)
+                self._unhashable = unhashable
+
+            def items(self):
+                yield from super().items()
+                yield from self._unhashable
+
+            def values(self):
+                yield from super().values()
+                for _, w in self._unhashable:
+                    yield w
+
+            def __iter__(self):
+                yield from super().__iter__()
+                for k, _ in self._unhashable:
+                    yield k
+
+            def __len__(self):
+                return super().__len__() + len(self._unhashable)
+
+        return _UnhashableHistogram(hashable_hist, unhashable_items)
+
+    return hashable_hist
 
 
 def infer(

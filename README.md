@@ -4,19 +4,13 @@
   <img src="assets/logo.jpeg" alt="Cathedral Logo" width="300"/>
 </p>
 
-[![Release](https://img.shields.io/github/v/release/andrewgiessel/cathedral)](https://img.shields.io/github/v/release/andrewgiessel/cathedral)
 [![Build status](https://img.shields.io/github/actions/workflow/status/andrewgiessel/cathedral/main.yml?branch=main)](https://github.com/andrewgiessel/cathedral/actions/workflows/main.yml?query=branch%3Amain)
-[![Commit activity](https://img.shields.io/github/commit-activity/m/andrewgiessel/cathedral)](https://img.shields.io/github/commit-activity/m/andrewgiessel/cathedral)
 
-## About
+A Pythonic probabilistic programming library inspired by [Church](https://cocolab.stanford.edu/papers/GoodmanEtAl2008-UncertaintyInArtificialIntelligence.pdf) and [WebPPL](http://webppl.org/). Write probabilistic models as plain Python functions, then run inference to get posteriors.
 
-Cathedral is a Pythonic probabilistic programming library inspired by [Church](https://cocolab.stanford.edu/papers/GoodmanEtAl2008-UncertaintyInArtificialIntelligence.pdf) and [WebPPL](http://webppl.org/). Write probabilistic models as plain Python functions, then run inference to get posteriors.
+Cathedral fills a gap in the Python ecosystem: **Church/WebPPL-level expressiveness** (stochastic control flow, recursive models, stochastic memoization) with **Pythonic syntax** and access to Python's scientific computing stack.
 
-Cathedral aims to fill a gap in the Python ecosystem: **Church/WebPPL-level expressiveness** (stochastic control flow, recursive models, stochastic memoization) with **Pythonic syntax** and access to Python's scientific computing ecosystem.
-
-- **Github repository**: <https://github.com/andrewgiessel/cathedral/>
-
-## Quick Example
+## Quick Start
 
 ```python
 from cathedral import model, infer, flip, condition
@@ -34,17 +28,14 @@ def sprinkler():
     condition(wet)
     return {"rain": rain, "sprinkler": sprinkler_on}
 
-posterior = infer(sprinkler, method="rejection", num_samples=5000)
-print(f"P(rain | wet grass) = {posterior.probability('rain'):.3f}")
+# Exact answer via enumeration
+posterior = infer(sprinkler, method="enumerate")
+print(f"P(rain | wet grass) = {posterior.probability('rain'):.4f}")  # 0.4615...
+
+# Or approximate via sampling
+posterior = infer(sprinkler, method="rejection", num_samples=10000)
+posterior = infer(sprinkler, method="mh", num_samples=5000, burn_in=1000)
 ```
-
-## Features
-
-- **Pure Python models**: No special syntax -- models are just decorated Python functions
-- **Flexible conditioning**: `condition()` for hard constraints, `observe()` for fitting data
-- **Multiple inference methods**: Rejection sampling, likelihood-weighted importance sampling (MCMC coming soon)
-- **Rich posterior analysis**: `.mean()`, `.std()`, `.probability()`, `.histogram()`, `.credible_interval()`
-- **Trace-based execution**: Every random choice is recorded for inspection and inference
 
 ## Installation
 
@@ -52,24 +43,104 @@ print(f"P(rain | wet grass) = {posterior.probability('rain'):.3f}")
 pip install cathedral
 ```
 
-## Core Primitives
+Requires Python >= 3.10, numpy, and scipy.
+
+## Primitives
 
 | Primitive | Description |
 |-----------|-------------|
-| `flip(p)` | Flip a coin with probability `p` of heads |
+| `flip(p)` | Flip a coin with probability `p` of True |
 | `sample(dist)` | Draw from any distribution (`Normal`, `Beta`, `Gamma`, ...) |
-| `condition(pred)` | Reject execution if `pred` is False |
-| `observe(dist, value)` | Soft-condition: the value was drawn from this distribution |
-| `factor(score)` | Add arbitrary log-probability score |
+| `condition(pred)` | Hard conditioning: reject execution if `pred` is False |
+| `observe(dist, val)` | Soft conditioning: score execution by `dist.log_prob(val)` |
+| `factor(score)` | Add arbitrary log-probability to the trace |
+| `mem(fn)` | Stochastic memoization: same args always return same random result |
+| `DPmem(alpha, fn)` | Dirichlet Process memoization for nonparametric models |
+
+## Inference Methods
+
+| Method | Syntax | Best for |
+|--------|--------|----------|
+| **Rejection sampling** | `infer(m, method="rejection")` | Small discrete models with `condition()` |
+| **Importance sampling** | `infer(m, method="importance")` | Continuous models with `observe()` |
+| **Single-site MH** | `infer(m, method="mh")` | Complex models, rare conditions, many latent variables |
+| **Exact enumeration** | `infer(m, method="enumerate")` | Small discrete models where you want exact answers |
+
+### MH options
+
+```python
+infer(model, method="mh", num_samples=5000, burn_in=1000, lag=2)
+```
+
+### Enumeration options
+
+```python
+infer(model, method="enumerate", strategy="likely_first", max_executions=1000)
+```
+
+Strategies: `depth_first` (default), `breadth_first`, `likely_first`.
+
+## Distributions
+
+**Continuous:** `Normal`, `HalfNormal`, `Beta`, `Gamma`, `Uniform`
+
+**Discrete:** `Bernoulli`, `Categorical`, `UniformDraw`, `Poisson`, `Geometric`
+
+**Multivariate:** `Dirichlet`
+
+All distributions support `.sample()`, `.log_prob(value)`, and `.prob(value)`. Discrete distributions also support `.support()` for enumeration.
+
+## Posterior Analysis
+
+```python
+posterior = infer(my_model, method="rejection", num_samples=5000)
+
+posterior.mean("param")                  # posterior mean
+posterior.std("param")                   # posterior std
+posterior.probability("flag")            # P(flag = True)
+posterior.probability(lambda r: r > 0)   # P(predicate)
+posterior.histogram("param")             # empirical distribution
+posterior.credible_interval(0.95, "param")  # 95% credible interval
+```
+
+## Examples
+
+The `examples/` directory contains runnable demonstrations inspired by [Probabilistic Models of Cognition](http://probmods.org/):
+
+| File | Topics |
+|------|--------|
+| `01_generative_models.py` | Coin flips, composition, `mem`, stochastic recursion, causal models |
+| `02_conditioning.py` | Bayesian reasoning, causal vs diagnostic inference, explaining away |
+| `03_patterns_of_inference.py` | Bayesian updating, Monty Hall, Occam's razor |
+| `04_bayesian_data_analysis.py` | Parameter estimation, model comparison, linear regression |
+| `05_mixture_models.py` | Gaussian mixtures, `DPmem` for infinite components |
+| `06_social_cognition.py` | Goal inference, preference learning, theory of mind |
+| `07_grammars_and_recursion.py` | PCFGs, random arithmetic, conditioned generation |
+
+Plus standalone examples: `sprinkler.py`, `coin_flip.py`, `linear_regression.py`.
+
+## Architecture
+
+Models are plain Python functions. A trace-based execution engine (via `contextvars`) records every random choice without passing trace objects through user code. Inference engines run models repeatedly, using interventions to replay or modify choices.
+
+```
+User code           Trace engine           Inference
+─────────           ────────────           ─────────
+@model fn    →    TraceContext      →    rejection / importance
+flip/sample  →    Choice records    →    MH (propose + accept)
+condition    →    log_score         →    enumeration (worklist)
+observe      →    log_score         →    Posterior
+```
 
 ## References
 
-- [Church: A Language for Generative Models](https://arxiv.org/pdf/1206.3255v2.pdf) - Goodman et al.
-- [From Word Models to World Models](https://arxiv.org/abs/2306.12672) - Wong, Grand, Lew, Goodman et al.
-- [WebPPL](http://webppl.org/) - Goodman & Stuhlmuller
-- [Gen.jl](https://www.gen.dev/) - Cusumano-Towner et al.
-- [Probabilistic Models of Cognition](http://probmods.org/) - Goodman & Tenenbaum
+- [Church: A Language for Generative Models](https://arxiv.org/pdf/1206.3255v2.pdf) -- Goodman, Mansinghka, Roy, Bonawitz, Tenenbaum
+- [Lightweight Implementations of Probabilistic Programming Languages](http://web.stanford.edu/~ngoodman/papers/lightweight-mcmc-aistats2011.pdf) -- Wingate, Stuhlmuller, Goodman
+- [Probabilistic Models of Cognition](http://probmods.org/) -- Goodman & Tenenbaum
+- [WebPPL](http://webppl.org/) -- Goodman & Stuhlmuller
+- [Gen.jl](https://www.gen.dev/) -- Cusumano-Towner, Saad, Lew, Mansinghka
+- [From Word Models to World Models](https://arxiv.org/abs/2306.12672) -- Wong, Grand, Lew, Goodman et al.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT -- see [LICENSE](LICENSE).

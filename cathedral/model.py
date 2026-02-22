@@ -15,6 +15,7 @@ from typing import Any
 import numpy as np
 
 from cathedral.inference.importance import importance_sample
+from cathedral.inference.mh import mh_sample
 from cathedral.inference.rejection import rejection_sample
 from cathedral.trace import Trace
 
@@ -169,6 +170,7 @@ def infer(
         method: Inference method. One of:
             - "rejection": Rejection sampling (for condition()-based models)
             - "importance": Likelihood-weighted importance sampling (for observe()-based models)
+            - "mh": Single-site Metropolis-Hastings (for complex models, supports burn_in and lag kwargs)
         num_samples: Number of posterior samples to collect.
         **kwargs: Additional keyword arguments passed to the inference engine.
 
@@ -193,7 +195,17 @@ def infer(
             num_samples=num_samples,
             resample=resample,
         )
+    elif method == "mh":
+        burn_in = kwargs.pop("burn_in", None)
+        lag = kwargs.pop("lag", 1)
+        traces = mh_sample(
+            fn,
+            args=args,
+            num_samples=num_samples,
+            burn_in=burn_in,
+            lag=lag,
+        )
     else:
-        raise ValueError(f"Unknown inference method: {method!r}. Choose from: 'rejection', 'importance'")
+        raise ValueError(f"Unknown inference method: {method!r}. Choose from: 'rejection', 'importance', 'mh'")
 
     return Posterior(traces)

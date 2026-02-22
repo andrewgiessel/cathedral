@@ -4,8 +4,9 @@ import numpy as np
 import pytest
 
 from cathedral import model
-from cathedral.distributions import Normal
+from cathedral.distributions import Bernoulli, Normal
 from cathedral.inference.importance import importance_sample
+from cathedral.inference.mh import mh_sample
 from cathedral.inference.rejection import rejection_sample
 from cathedral.primitives import condition, flip, observe, sample
 
@@ -224,3 +225,150 @@ class TestPosterior:
 
         posterior = infer(coin, method="rejection", num_samples=100)
         assert posterior.num_samples == 100
+
+
+class TestMHSampling:
+    def test_simple_condition(self):
+        """MH should produce traces that satisfy the condition."""
+
+        def model_fn():
+            x = flip(0.5)
+            condition(x)
+            return x
+
+        traces = mh_sample(model_fn, num_samples=200, burn_in=100)
+        assert len(traces) == 200
+        assert all(t.result is True for t in traces)
+
+    def test_biased_coin_posterior(self):
+        """MH should approximate the correct posterior for a biased coin."""
+        np.random.seed(42)
+
+        def biased():
+            fair = flip(0.5)
+            result = flip(0.5 if fair else 0.9)
+            condition(result)
+            return fair
+
+        traces = mh_sample(biased, num_samples=3000, burn_in=500)
+        fair_prob = sum(t.result for t in traces) / len(traces)
+        # P(fair | heads) = P(heads|fair)*P(fair) / P(heads)
+        # = 0.5*0.5 / (0.5*0.5 + 0.9*0.5) = 0.25/0.7 ≈ 0.357
+        assert 0.25 < fair_prob < 0.50
+
+    def test_sprinkler(self):
+        """Classic sprinkler example should give reasonable P(rain|wet)."""
+        np.random.seed(123)
+
+        def sprinkler():
+            rain = flip(0.3)
+            sprinkler_on = flip(0.5)
+            if rain:
+                wet = flip(0.9)
+            elif sprinkler_on:
+                wet = flip(0.8)
+            else:
+                wet = flip(0.1)
+            condition(wet)
+            return {"rain": rain, "sprinkler": sprinkler_on}
+
+        traces = mh_sample(sprinkler, num_samples=5000, burn_in=1000)
+        rain_prob = sum(t.result["rain"] for t in traces) / len(traces)
+        assert 0.25 < rain_prob < 0.65
+
+    def test_continuous_observe(self):
+        """MH should work with observe()-based soft conditioning."""
+        np.random.seed(42)
+
+        def gaussian_mean():
+            mu = sample(Normal(0, 5), name="mu")
+            observe(Normal(mu, 1), 3.0)
+            observe(Normal(mu, 1), 3.5)
+            observe(Normal(mu, 1), 2.5)
+            return mu
+
+        traces = mh_sample(gaussian_mean, num_samples=3000, burn_in=1000)
+        mean_mu = np.mean([t.result for t in traces])
+        assert 1.5 < mean_mu < 4.5
+
+    def test_num_samples_correct(self):
+        """Should return exactly num_samples traces."""
+
+        def coin():
+            return flip(0.5)
+
+        traces = mh_sample(coin, num_samples=50, burn_in=10)
+        assert len(traces) == 50
+
+    def test_burn_in_default(self):
+        """Default burn_in should be num_samples // 2."""
+
+        def coin():
+            return flip(0.5)
+
+        traces = mh_sample(coin, num_samples=100)
+        assert len(traces) == 100
+
+    def test_lag(self):
+        """Lag/thinning should skip intermediate samples."""
+
+        def coin():
+            return flip(0.5)
+
+        traces = mh_sample(coin, num_samples=50, burn_in=10, lag=3)
+        assert len(traces) == 50
+
+    def test_structural_changes(self):
+        """MH should handle models where control flow depends on random choices."""
+        np.random.seed(42)
+
+        def branching():
+            a = flip(0.5, name="a")
+            if a:
+                b = sample(Normal(0, 1), name="b")
+                return {"a": a, "val": b}
+            else:
+                c = sample(Normal(5, 1), name="c")
+                return {"a": a, "val": c}
+
+        traces = mh_sample(branching, num_samples=2000, burn_in=500)
+        a_prob = sum(t.result["a"] for t in traces) / len(traces)
+        assert 0.3 < a_prob < 0.7
+
+    def test_impossible_initial_trace(self):
+        """Should raise if initial trace can't be found."""
+
+        def impossible():
+            condition(False)
+            return True
+
+        with pytest.raises(RuntimeError, match="could not find a valid initial trace"):
+            mh_sample(impossible, num_samples=10, max_init_attempts=100)
+
+    def test_with_model_args(self):
+        """MH should correctly pass through model arguments."""
+        np.random.seed(42)
+
+        def threshold_model(threshold):
+            x = sample(Normal(0, 1), name="x")
+            condition(x > threshold)
+            return x
+
+        traces = mh_sample(threshold_model, args=(-1.0,), num_samples=500, burn_in=200)
+        assert all(t.result > -1.0 for t in traces)
+
+    def test_infer_mh_method(self):
+        """MH should be accessible via infer() with method='mh'."""
+        np.random.seed(42)
+        from cathedral.model import infer
+
+        @model
+        def coin():
+            fair = flip(0.5)
+            result = flip(0.5 if fair else 0.9)
+            condition(result)
+            return fair
+
+        posterior = infer(coin, method="mh", num_samples=1000, burn_in=200)
+        assert posterior.num_samples == 1000
+        assert 0.20 < posterior.probability() < 0.55

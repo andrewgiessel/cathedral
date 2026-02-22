@@ -4,7 +4,7 @@
   <img src="assets/logo.jpeg" alt="Cathedral Logo" width="300"/>
 </p>
 
-[![Build status](https://img.shields.io/github/actions/workflow/status/andrewgiessel/cathedral/main.yml?branch=main)](https://github.com/andrewgiessel/cathedral/actions/workflows/main.yml?query=branch%3Amain)
+[![CI](https://img.shields.io/github/actions/workflow/status/andrewgiessel/cathedral/python-package.yml?branch=main)](https://github.com/andrewgiessel/cathedral/actions/workflows/python-package.yml)
 
 A Pythonic probabilistic programming library inspired by [Church](https://cocolab.stanford.edu/papers/GoodmanEtAl2008-UncertaintyInArtificialIntelligence.pdf) and [WebPPL](http://webppl.org/). Write probabilistic models as plain Python functions, then run inference to get posteriors.
 

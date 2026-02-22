@@ -201,9 +201,7 @@ class _UnhashableHistogram(dict):
         return super().__len__() + len(self._unhashable)
 
 
-def _accumulate_unhashable(
-    items: list[tuple[Any, float]], value: Any, weight: float
-) -> None:
+def _accumulate_unhashable(items: list[tuple[Any, float]], value: Any, weight: float) -> None:
     """Add *weight* for *value* into the unhashable linear-scan list in place."""
     for i, (uv, uw) in enumerate(items):
         if uv == value:
@@ -297,8 +295,7 @@ def infer(
         return Posterior(traces, weights=weights)
     else:
         raise ValueError(
-            f"Unknown inference method: {method!r}. "
-            f"Choose from: 'rejection', 'importance', 'mh', 'enumerate'"
+            f"Unknown inference method: {method!r}. Choose from: 'rejection', 'importance', 'mh', 'enumerate'"
         )
 
     return Posterior(traces)

@@ -121,8 +121,7 @@ def enumerate_executions(
 
     if not completed:
         raise RuntimeError(
-            "Enumeration: all execution paths were rejected. "
-            "Check that your model has at least one satisfiable path."
+            "Enumeration: all execution paths were rejected. Check that your model has at least one satisfiable path."
         )
 
     return completed

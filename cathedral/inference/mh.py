@@ -103,11 +103,7 @@ def _mh_step(
 
     selected = addresses[np.random.randint(len(addresses))]
 
-    interventions = {
-        addr: choice.value
-        for addr, choice in current.choices.items()
-        if addr != selected
-    }
+    interventions = {addr: choice.value for addr, choice in current.choices.items() if addr != selected}
 
     try:
         proposed = run_with_trace(model_fn, args=args, kwargs=kwargs, interventions=interventions)
@@ -162,9 +158,6 @@ def _log_acceptance_ratio(old: Trace, new: Trace, selected: str) -> float:
     appeared = new_addrs - old_addrs
     disappeared = old_addrs - new_addrs
 
-    log_structural = (
-        sum(old.choices[a].log_prob for a in disappeared)
-        - sum(new.choices[a].log_prob for a in appeared)
-    )
+    log_structural = sum(old.choices[a].log_prob for a in disappeared) - sum(new.choices[a].log_prob for a in appeared)
 
     return log_joint_ratio + log_size_correction + log_selected_correction + log_structural

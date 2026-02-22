@@ -129,7 +129,7 @@ def _log_acceptance_ratio(old: Trace, new: Trace, selected: str) -> float:
 
     The full ratio for proposing from the prior at site k is:
 
-        log α = (log_joint_new - log_joint_old)
+        log a = (log_joint_new - log_joint_old)
               + log(|K_old| / |K_new|)
               + old_k.log_prob - new_k.log_prob
               + Σ_disappeared old_j.log_prob - Σ_new new_j.log_prob

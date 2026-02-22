@@ -1,0 +1,42 @@
+"""Bayesian linear regression example.
+
+Infer the slope and intercept of a line from noisy observations.
+Demonstrates observe() for soft conditioning and importance sampling.
+"""
+
+import numpy as np
+
+from cathedral import HalfNormal, Normal, infer, model, observe, sample
+
+
+@model
+def line_model(xs, ys):
+    slope = sample(Normal(0, 5), name="slope")
+    intercept = sample(Normal(0, 5), name="intercept")
+    noise = sample(HalfNormal(2), name="noise")
+
+    for x, y in zip(xs, ys):
+        observe(Normal(slope * x + intercept, noise), y)
+
+    return {"slope": slope, "intercept": intercept, "noise": noise}
+
+
+if __name__ == "__main__":
+    np.random.seed(42)
+
+    true_slope = 2.0
+    true_intercept = 1.0
+    true_noise = 0.5
+    xs = np.linspace(0, 5, 20)
+    ys = true_slope * xs + true_intercept + np.random.normal(0, true_noise, len(xs))
+
+    print(f"True parameters: slope={true_slope}, intercept={true_intercept}, noise={true_noise}")
+    print(f"Data: {len(xs)} points\n")
+
+    posterior = infer(line_model, xs, ys, method="importance", num_samples=10000)
+
+    for param in ["slope", "intercept", "noise"]:
+        mean = posterior.mean(param)
+        std = posterior.std(param)
+        lo, hi = posterior.credible_interval(param, level=0.95)
+        print(f"{param:>12s}: {mean:.3f} +/- {std:.3f}  (95% CI: {lo:.3f} to {hi:.3f})")

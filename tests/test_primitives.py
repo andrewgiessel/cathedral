@@ -5,8 +5,8 @@ import math
 import numpy as np
 import pytest
 
-from cathedral.distributions import Bernoulli, Normal
-from cathedral.primitives import condition, factor, flip, observe, sample
+from cathedral.distributions import Categorical, Normal
+from cathedral.primitives import DPmem, condition, factor, flip, mem, observe, sample
 from cathedral.trace import Rejected, run_with_trace
 
 
@@ -134,3 +134,102 @@ class TestFactor:
     def test_factor_without_trace(self):
         """factor() is a no-op outside tracing context."""
         factor(-1.0)  # should not raise
+
+
+class TestMem:
+    def test_mem_caches_within_trace(self):
+        """mem'd function returns same value for same args within a trace."""
+
+        def model():
+            eye_color = mem(lambda person: sample(Categorical(["blue", "green", "brown"], [1 / 3, 1 / 3, 1 / 3])))
+            return eye_color("bob"), eye_color("bob")
+
+        for _ in range(20):
+            trace = run_with_trace(model)
+            a, b = trace.result
+            assert a == b
+
+    def test_mem_different_args_independent(self):
+        """mem'd function can return different values for different args."""
+        np.random.seed(42)
+        results = set()
+        for _ in range(50):
+
+            def model():
+                f = mem(lambda x: sample(Categorical(["a", "b", "c"], [1 / 3, 1 / 3, 1 / 3])))
+                return f("x"), f("y")
+
+            trace = run_with_trace(model)
+            a, b = trace.result
+            results.add((a, b))
+        # Should see at least some cases where a != b
+        assert any(a != b for a, b in results)
+
+    def test_mem_cache_is_per_trace(self):
+        """Different traces get independent memo caches."""
+        np.random.seed(42)
+        results = set()
+        for _ in range(30):
+
+            def model():
+                f = mem(lambda: sample(Categorical(["a", "b", "c"], [1 / 3, 1 / 3, 1 / 3])))
+                return f()
+
+            trace = run_with_trace(model)
+            results.add(trace.result)
+        # Should see variation across traces
+        assert len(results) > 1
+
+    def test_mem_without_trace(self):
+        """mem works in standalone mode with its own cache."""
+        np.random.seed(42)
+        f = mem(lambda x: sample(Normal(0, 1)))
+        val1 = f("a")
+        val2 = f("a")
+        assert val1 == val2
+
+    def test_mem_preserves_function_name(self):
+        def my_function(x):
+            return sample(Normal(0, 1))
+
+        m = mem(my_function)
+        assert m.__name__ == "my_function"
+
+    def test_mem_with_list_args(self):
+        """mem handles unhashable args like lists."""
+
+        def model():
+            f = mem(lambda items: sample(Normal(0, 1)))
+            a = f([1, 2, 3])
+            b = f([1, 2, 3])
+            return a == b
+
+        trace = run_with_trace(model)
+        assert trace.result is True
+
+
+class TestDPmem:
+    def test_dpmem_low_alpha_reuses(self):
+        """With very low alpha, DPmem should mostly reuse existing values."""
+        np.random.seed(42)
+        f = DPmem(0.001, lambda: sample(Normal(0, 100)))
+        vals = [f() for _ in range(20)]
+        unique = set(vals)
+        assert len(unique) <= 3  # should converge to very few values
+
+    def test_dpmem_high_alpha_varies(self):
+        """With very high alpha, DPmem should mostly sample new values."""
+        np.random.seed(42)
+        f = DPmem(1000.0, lambda: sample(Categorical(list(range(100)), [1 / 100] * 100)))
+        vals = [f() for _ in range(50)]
+        unique = set(vals)
+        assert len(unique) > 10
+
+    def test_dpmem_different_args_independent(self):
+        """DPmem maintains separate tables per argument."""
+        np.random.seed(42)
+        f = DPmem(0.001, lambda x: sample(Normal(x, 0.01)))
+        a_vals = [f(0.0) for _ in range(10)]
+        b_vals = [f(100.0) for _ in range(10)]
+        assert abs(np.mean(a_vals)) < 10
+        assert abs(np.mean(b_vals) - 100) < 10

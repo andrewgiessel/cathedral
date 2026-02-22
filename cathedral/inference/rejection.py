@@ -9,7 +9,8 @@ not too rare.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from cathedral.trace import Rejected, Trace, run_with_trace
 

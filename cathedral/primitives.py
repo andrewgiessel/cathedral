@@ -8,7 +8,11 @@ samples directly.
 
 from __future__ import annotations
 
+import functools
+from collections.abc import Callable
 from typing import Any
+
+import numpy as np
 
 from cathedral.distributions import Bernoulli, Distribution
 from cathedral.trace import Rejected, get_trace_context
@@ -99,3 +103,120 @@ def factor(score: float) -> None:
     ctx = get_trace_context()
     if ctx is not None:
         ctx.add_score(score)
+
+
+def _make_hashable(args: tuple) -> tuple:
+    """Convert function arguments to a hashable key for memo caches."""
+    result = []
+    for arg in args:
+        if isinstance(arg, list):
+            result.append(("__list__", _make_hashable(tuple(arg))))
+        elif isinstance(arg, dict):
+            result.append(("__dict__", tuple(sorted(arg.items()))))
+        elif isinstance(arg, np.ndarray):
+            result.append(("__ndarray__", arg.tobytes(), arg.shape))
+        else:
+            result.append(arg)
+    return tuple(result)
+
+
+def mem(fn: Callable) -> Callable:
+    """Stochastic memoization.
+
+    Returns a version of fn that caches its return value for each unique
+    set of arguments. Within a single model execution (trace), calling
+    the memoized function with the same arguments always returns the same
+    value -- even if the original function is stochastic.
+
+    This is the key primitive for "persistent randomness" in Church:
+    random properties that are determined once and then fixed.
+
+    Example:
+        eye_color = mem(lambda person: sample(Categorical(
+            ["blue", "green", "brown"], [1/3, 1/3, 1/3])))
+        eye_color("bob")   # samples once
+        eye_color("bob")   # returns same value
+        eye_color("alice") # samples independently
+
+    Args:
+        fn: The function to memoize.
+
+    Returns:
+        A memoized version of fn with per-trace caching.
+    """
+    standalone_cache: dict = {}
+    func_id = id(fn)
+
+    @functools.wraps(fn)
+    def memoized(*args):
+        ctx = get_trace_context()
+        key = _make_hashable(args)
+
+        if ctx is not None:
+            cache = ctx.get_memo_cache(func_id)
+        else:
+            cache = standalone_cache
+
+        if key not in cache:
+            cache[key] = fn(*args)
+        return cache[key]
+
+    memoized._is_memoized = True
+    memoized._original_fn = fn
+    return memoized
+
+
+def DPmem(alpha: float, fn: Callable) -> Callable:
+    """Dirichlet Process stochastic memoizer.
+
+    Like mem, but instead of always returning the cached value, it
+    stochastically decides whether to reuse a previous value or sample
+    a new one, using the Chinese Restaurant Process.
+
+    When alpha=0, behaves like mem (always reuse).
+    When alpha=inf, behaves like the original function (always resample).
+
+    Args:
+        alpha: Concentration parameter. Higher = more likely to sample new values.
+        fn: The function to memoize.
+
+    Returns:
+        A DP-memoized version of fn.
+    """
+    func_id = id(fn)
+    standalone_cache: dict = {}
+
+    def dp_memoized(*args):
+        ctx = get_trace_context()
+        key = _make_hashable(args)
+
+        if ctx is not None:
+            cache = ctx.get_memo_cache(func_id)
+        else:
+            cache = standalone_cache
+
+        if key not in cache:
+            cache[key] = {"values": [], "counts": []}
+
+        table = cache[key]
+
+        total_count = sum(table["counts"]) if table["counts"] else 0
+        prob_new = alpha / (alpha + total_count)
+
+        if not table["values"] or np.random.random() < prob_new:
+            result = fn(*args)
+            table["values"].append(result)
+            table["counts"].append(1)
+        else:
+            probs = np.array(table["counts"], dtype=float)
+            probs /= probs.sum()
+            idx = np.random.choice(len(table["values"]), p=probs)
+            result = table["values"][idx]
+            table["counts"][idx] += 1
+
+        return result
+
+    dp_memoized._is_dp_memoized = True
+    dp_memoized._alpha = alpha
+    dp_memoized._original_fn = fn
+    return dp_memoized

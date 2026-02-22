@@ -3,12 +3,11 @@
 import numpy as np
 import pytest
 
-from cathedral import Posterior, model
+from cathedral import model
 from cathedral.distributions import Normal
 from cathedral.inference.importance import importance_sample
 from cathedral.inference.rejection import rejection_sample
 from cathedral.primitives import condition, flip, observe, sample
-from cathedral.trace import run_with_trace
 
 
 class TestRejectionSampling:
@@ -92,7 +91,7 @@ class TestImportanceSampling:
         def line_model(xs, ys):
             slope = sample(Normal(0, 5))
             intercept = sample(Normal(0, 5))
-            for x, y in zip(xs, ys):
+            for x, y in zip(xs, ys, strict=False):
                 observe(Normal(slope * x + intercept, 0.5), y)
             return {"slope": slope, "intercept": intercept}
 

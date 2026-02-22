@@ -62,7 +62,7 @@ class Categorical(Distribution):
             raise ValueError(f"probs must sum to 1, got {total}")
         self.values = list(values)
         self.probs = list(probs)
-        self._log_probs = {v: math.log(p) if p > 0 else -math.inf for v, p in zip(values, probs)}
+        self._log_probs = {v: math.log(p) if p > 0 else -math.inf for v, p in zip(values, probs, strict=False)}
 
     def sample(self) -> Any:
         idx = np.random.choice(len(self.values), p=self.probs)
@@ -77,6 +77,9 @@ class Categorical(Distribution):
         return f"Categorical(values={self.values}, probs={self.probs})"
 
 
+_LOG_SQRT_2PI = 0.5 * math.log(2 * math.pi)
+
+
 class Normal(Distribution):
     """Normal (Gaussian) distribution."""
 
@@ -85,16 +88,20 @@ class Normal(Distribution):
             raise ValueError(f"sigma must be positive, got {sigma}")
         self.mu = mu
         self.sigma = sigma
-        self._dist = stats.norm(loc=mu, scale=sigma)
+        self._log_sigma = math.log(sigma)
 
     def sample(self) -> float:
         return float(np.random.normal(self.mu, self.sigma))
 
     def log_prob(self, value: Any) -> float:
-        return float(self._dist.logpdf(value))
+        z = (value - self.mu) / self.sigma
+        return -0.5 * z * z - self._log_sigma - _LOG_SQRT_2PI
 
     def __repr__(self) -> str:
         return f"Normal(mu={self.mu}, sigma={self.sigma})"
+
+
+_LOG_2 = math.log(2)
 
 
 class HalfNormal(Distribution):
@@ -104,7 +111,7 @@ class HalfNormal(Distribution):
         if sigma <= 0:
             raise ValueError(f"sigma must be positive, got {sigma}")
         self.sigma = sigma
-        self._dist = stats.halfnorm(scale=sigma)
+        self._log_sigma = math.log(sigma)
 
     def sample(self) -> float:
         return float(abs(np.random.normal(0, self.sigma)))
@@ -112,7 +119,8 @@ class HalfNormal(Distribution):
     def log_prob(self, value: Any) -> float:
         if value < 0:
             return -math.inf
-        return float(self._dist.logpdf(value))
+        z = value / self.sigma
+        return _LOG_2 - 0.5 * z * z - self._log_sigma - _LOG_SQRT_2PI
 
     def __repr__(self) -> str:
         return f"HalfNormal(sigma={self.sigma})"
@@ -204,6 +212,49 @@ class Poisson(Distribution):
 
     def __repr__(self) -> str:
         return f"Poisson(rate={self.rate})"
+
+
+class UniformDraw(Distribution):
+    """Uniform draw from a finite set of values."""
+
+    def __init__(self, values: list):
+        if len(values) == 0:
+            raise ValueError("values must be non-empty")
+        self.values = list(values)
+        self._log_p = -math.log(len(values))
+
+    def sample(self) -> Any:
+        idx = np.random.randint(len(self.values))
+        return self.values[idx]
+
+    def log_prob(self, value: Any) -> float:
+        if value in self.values:
+            return self._log_p
+        return -math.inf
+
+    def __repr__(self) -> str:
+        return f"UniformDraw(values={self.values})"
+
+
+class Geometric(Distribution):
+    """Geometric distribution (number of failures before first success)."""
+
+    def __init__(self, p: float = 0.5):
+        if not 0 < p <= 1:
+            raise ValueError(f"p must be in (0, 1], got {p}")
+        self.p = p
+        self._dist = stats.geom(p)
+
+    def sample(self) -> int:
+        return int(np.random.geometric(self.p)) - 1
+
+    def log_prob(self, value: Any) -> float:
+        if value < 0 or value != int(value):
+            return -math.inf
+        return float(self._dist.logpmf(int(value) + 1))
+
+    def __repr__(self) -> str:
+        return f"Geometric(p={self.p})"
 
 
 class Dirichlet(Distribution):

@@ -15,7 +15,7 @@ def line_model(xs, ys):
     intercept = sample(Normal(0, 5), name="intercept")
     noise = sample(HalfNormal(2), name="noise")
 
-    for x, y in zip(xs, ys):
+    for x, y in zip(xs, ys, strict=False):
         observe(Normal(slope * x + intercept, noise), y)
 
     return {"slope": slope, "intercept": intercept, "noise": noise}
@@ -38,5 +38,5 @@ if __name__ == "__main__":
     for param in ["slope", "intercept", "noise"]:
         mean = posterior.mean(param)
         std = posterior.std(param)
-        lo, hi = posterior.credible_interval(param, level=0.95)
+        lo, hi = posterior.credible_interval(key=param)
         print(f"{param:>12s}: {mean:.3f} +/- {std:.3f}  (95% CI: {lo:.3f} to {hi:.3f})")

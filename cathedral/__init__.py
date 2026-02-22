@@ -25,38 +25,40 @@ from cathedral.distributions import (
     Dirichlet,
     Distribution,
     Gamma,
+    Geometric,
     HalfNormal,
     Normal,
     Poisson,
     Uniform,
+    UniformDraw,
 )
 from cathedral.model import Posterior, infer, model
-from cathedral.primitives import condition, factor, flip, observe, sample
+from cathedral.primitives import DPmem, condition, factor, flip, mem, observe, sample
 from cathedral.trace import Rejected, Trace
 
 __all__ = [
-    # Model and inference
-    "model",
-    "infer",
-    "Posterior",
-    # Primitives
-    "sample",
-    "flip",
-    "condition",
-    "observe",
-    "factor",
-    # Distributions
-    "Distribution",
     "Bernoulli",
     "Beta",
     "Categorical",
+    "DPmem",
     "Dirichlet",
+    "Distribution",
     "Gamma",
+    "Geometric",
     "HalfNormal",
     "Normal",
     "Poisson",
-    "Uniform",
-    # Trace
-    "Trace",
+    "Posterior",
     "Rejected",
+    "Trace",
+    "Uniform",
+    "UniformDraw",
+    "condition",
+    "factor",
+    "flip",
+    "infer",
+    "mem",
+    "model",
+    "observe",
+    "sample",
 ]

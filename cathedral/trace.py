@@ -83,6 +83,7 @@ class TraceContext:
         self.interventions = interventions or {}
         self._counter: int = 0
         self._address_counts: dict[str, int] = {}
+        self._memo_caches: dict[int, dict] = {}
 
     def fresh_address(self, prefix: str = "sample") -> str:
         """Generate a unique address for a sample site."""
@@ -108,6 +109,12 @@ class TraceContext:
     def get_intervention(self, address: str) -> Any:
         """Get the intervention value for this address."""
         return self.interventions[address]
+
+    def get_memo_cache(self, func_id: int) -> dict:
+        """Get or create the memo cache for a given function within this trace."""
+        if func_id not in self._memo_caches:
+            self._memo_caches[func_id] = {}
+        return self._memo_caches[func_id]
 
 
 def get_trace_context() -> TraceContext | None:

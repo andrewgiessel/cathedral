@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import functools
 from collections import Counter
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 
@@ -120,12 +121,12 @@ class Posterior:
         total = sum(counts.values())
         return {k: v / total for k, v in counts.items()}
 
-    def credible_interval(self, key: str | None = None, level: float = 0.95) -> tuple[float, float]:
+    def credible_interval(self, level: float = 0.95, key: str | None = None) -> tuple[float, float]:
         """Compute a credible interval.
 
         Args:
-            key: If results are dicts, compute interval for this key.
             level: Credible level (default 0.95 for 95% CI).
+            key: If results are dicts, compute interval for this key.
 
         Returns:
             Tuple of (lower, upper) bounds.

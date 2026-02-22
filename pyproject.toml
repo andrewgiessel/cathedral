@@ -97,10 +97,15 @@ ignore = [
     "E501",
     # DoNotAssignLambda
     "E731",
+    # Avoid specifying long messages outside exception class (overly strict for small projects)
+    "TRY003",
+    # Use ternary operator (less readable for multi-line logic)
+    "SIM108",
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]
+"examples/*" = ["F841", "B007", "RUF005", "RUF015"]
 
 [tool.ruff.format]
 preview = true

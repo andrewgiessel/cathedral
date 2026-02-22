@@ -33,11 +33,11 @@ if __name__ == "__main__":
     print("=== Fair coin inference ===")
     posterior = infer(fair_coin, method="rejection", num_samples=10000)
     print(f"P(fair | heads) = {posterior.probability():.3f}")
-    print(f"  (prior was 0.5, should decrease slightly since biased coin more likely to give heads)")
+    print("  (prior was 0.5, should decrease slightly since biased coin more likely to give heads)")
 
     print("\n=== Coin bias inference ===")
     posterior = infer(coin_bias, method="importance", num_samples=10000)
     print(f"Inferred bias: {posterior.mean():.3f} +/- {posterior.std():.3f}")
     lo, hi = posterior.credible_interval(level=0.95)
     print(f"95% CI: ({lo:.3f}, {hi:.3f})")
-    print(f"  (observed 6/8 heads, expect bias ~0.75)")
+    print("  (observed 6/8 heads, expect bias ~0.75)")

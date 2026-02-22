@@ -92,7 +92,7 @@ class TestRunWithTrace:
         assert len(trace) == 2
 
     def test_rejected_propagates(self):
-        from cathedral.primitives import condition, flip
+        from cathedral.primitives import condition
 
         def model():
             condition(False)

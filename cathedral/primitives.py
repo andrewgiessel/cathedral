@@ -15,7 +15,7 @@ from typing import Any
 import numpy as np
 
 from cathedral.distributions import Bernoulli, Distribution
-from cathedral.trace import Rejected, get_trace_context
+from cathedral.trace import NeedsEnumeration, Rejected, get_trace_context
 
 
 def sample(dist: Distribution, *, name: str | None = None) -> Any:
@@ -40,6 +40,15 @@ def sample(dist: Distribution, *, name: str | None = None) -> Any:
 
     if ctx.has_intervention(address):
         value = ctx.get_intervention(address)
+    elif ctx.enumerate_mode:
+        if dist.support() is not None:
+            raise NeedsEnumeration(address, dist)
+        raise RuntimeError(
+            f"Enumeration encountered a distribution with no finite support "
+            f"at address '{address}': {dist!r}. "
+            f"Enumeration only works with discrete distributions "
+            f"(Bernoulli, Categorical, UniformDraw)."
+        )
     else:
         value = dist.sample()
 

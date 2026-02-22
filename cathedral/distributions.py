@@ -30,6 +30,10 @@ class Distribution(ABC):
         """Compute the probability (or density) of a value."""
         return math.exp(self.log_prob(value))
 
+    def support(self) -> list[Any] | None:
+        """Return the finite support of this distribution, or None if infinite/continuous."""
+        return None
+
 
 class Bernoulli(Distribution):
     """Bernoulli distribution: returns True with probability p."""
@@ -46,6 +50,9 @@ class Bernoulli(Distribution):
         if value:
             return math.log(self.p) if self.p > 0 else -math.inf
         return math.log(1 - self.p) if self.p < 1 else -math.inf
+
+    def support(self) -> list[bool]:
+        return [True, False]
 
     def __repr__(self) -> str:
         return f"Bernoulli(p={self.p})"
@@ -72,6 +79,9 @@ class Categorical(Distribution):
         if value in self._log_probs:
             return self._log_probs[value]
         return -math.inf
+
+    def support(self) -> list[Any]:
+        return list(self.values)
 
     def __repr__(self) -> str:
         return f"Categorical(values={self.values}, probs={self.probs})"
@@ -231,6 +241,9 @@ class UniformDraw(Distribution):
         if value in self.values:
             return self._log_p
         return -math.inf
+
+    def support(self) -> list[Any]:
+        return list(self.values)
 
     def __repr__(self) -> str:
         return f"UniformDraw(values={self.values})"

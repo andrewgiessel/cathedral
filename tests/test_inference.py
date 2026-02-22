@@ -4,7 +4,8 @@ import numpy as np
 import pytest
 
 from cathedral import model
-from cathedral.distributions import Bernoulli, Normal
+from cathedral.distributions import Bernoulli, Categorical, Normal, UniformDraw
+from cathedral.inference.enumeration import enumerate_executions, marginals_from_traces
 from cathedral.inference.importance import importance_sample
 from cathedral.inference.mh import mh_sample
 from cathedral.inference.rejection import rejection_sample
@@ -372,3 +373,194 @@ class TestMHSampling:
         posterior = infer(coin, method="mh", num_samples=1000, burn_in=200)
         assert posterior.num_samples == 1000
         assert 0.20 < posterior.probability() < 0.55
+
+
+class TestEnumeration:
+    def test_single_flip(self):
+        """Enumerating a single flip should produce exactly 2 traces."""
+
+        def coin():
+            return flip(0.7)
+
+        traces = enumerate_executions(coin)
+        assert len(traces) == 2
+        marginals = marginals_from_traces(traces)
+        assert abs(marginals[True] - 0.7) < 1e-10
+        assert abs(marginals[False] - 0.3) < 1e-10
+
+    def test_two_flips(self):
+        """Two independent flips should produce 4 traces."""
+
+        def two_coins():
+            a = flip(0.5)
+            b = flip(0.5)
+            return (a, b)
+
+        traces = enumerate_executions(two_coins)
+        assert len(traces) == 4
+        marginals = marginals_from_traces(traces)
+        for val in [(True, True), (True, False), (False, True), (False, False)]:
+            assert abs(marginals[val] - 0.25) < 1e-10
+
+    def test_condition_exact(self):
+        """Conditioning should produce exact posterior probabilities."""
+
+        def biased_coin():
+            fair = flip(0.5)
+            result = flip(0.5 if fair else 0.9)
+            condition(result)
+            return fair
+
+        traces = enumerate_executions(biased_coin)
+        marginals = marginals_from_traces(traces)
+        # P(fair|heads) = P(heads|fair)*P(fair) / P(heads)
+        # = 0.5*0.5 / (0.5*0.5 + 0.9*0.5) = 0.25/0.7
+        expected = 0.25 / 0.7
+        assert abs(marginals[True] - expected) < 1e-10
+        assert abs(marginals[False] - (1 - expected)) < 1e-10
+
+    def test_sprinkler_exact(self):
+        """Sprinkler model should give exact P(rain|wet)."""
+
+        def sprinkler():
+            rain = flip(0.3)
+            sprinkler_on = flip(0.5)
+            if rain:
+                wet = flip(0.9)
+            elif sprinkler_on:
+                wet = flip(0.8)
+            else:
+                wet = flip(0.1)
+            condition(wet)
+            return {"rain": rain, "sprinkler": sprinkler_on}
+
+        traces = enumerate_executions(sprinkler)
+        marginals = marginals_from_traces(traces)
+
+        # Compute exact P(rain|wet) by summing over all rain=True outcomes
+        rain_prob = sum(p for val, p in marginals.items() if val["rain"])
+        # P(wet) = 0.3*0.9 + 0.7*(0.5*0.8 + 0.5*0.1)
+        #        = 0.27 + 0.7*0.45 = 0.27 + 0.315 = 0.585
+        # P(rain|wet) = 0.27 / 0.585 ≈ 0.4615
+        assert abs(rain_prob - 0.27 / 0.585) < 1e-10
+
+    def test_categorical(self):
+        """Enumeration should work with Categorical distributions."""
+
+        def die_roll():
+            die = sample(Categorical(["a", "b", "c"], [0.2, 0.3, 0.5]))
+            return die
+
+        traces = enumerate_executions(die_roll)
+        assert len(traces) == 3
+        marginals = marginals_from_traces(traces)
+        assert abs(marginals["a"] - 0.2) < 1e-10
+        assert abs(marginals["b"] - 0.3) < 1e-10
+        assert abs(marginals["c"] - 0.5) < 1e-10
+
+    def test_uniform_draw(self):
+        """Enumeration should work with UniformDraw."""
+
+        def pick():
+            return sample(UniformDraw([10, 20, 30]))
+
+        traces = enumerate_executions(pick)
+        assert len(traces) == 3
+        marginals = marginals_from_traces(traces)
+        for val in [10, 20, 30]:
+            assert abs(marginals[val] - 1 / 3) < 1e-10
+
+    def test_structural_branching(self):
+        """Enumeration should handle control-flow branching correctly."""
+
+        def branching():
+            a = flip(0.5)
+            if a:
+                b = flip(0.3)
+                return ("a", b)
+            else:
+                c = flip(0.7)
+                return ("not_a", c)
+
+        traces = enumerate_executions(branching)
+        assert len(traces) == 4
+        marginals = marginals_from_traces(traces)
+        assert abs(marginals[("a", True)] - 0.5 * 0.3) < 1e-10
+        assert abs(marginals[("a", False)] - 0.5 * 0.7) < 1e-10
+        assert abs(marginals[("not_a", True)] - 0.5 * 0.7) < 1e-10
+        assert abs(marginals[("not_a", False)] - 0.5 * 0.3) < 1e-10
+
+    def test_max_executions(self):
+        """max_executions should limit the number of complete paths explored."""
+
+        def many_flips():
+            return (flip(0.5), flip(0.5), flip(0.5), flip(0.5))
+
+        traces = enumerate_executions(many_flips, max_executions=4)
+        assert len(traces) == 4
+
+    def test_strategies_all_complete(self):
+        """All strategies should produce the same marginals for exhaustive enumeration."""
+
+        def coin():
+            return flip(0.6)
+
+        for strategy in ["depth_first", "breadth_first", "likely_first"]:
+            traces = enumerate_executions(coin, strategy=strategy)
+            marginals = marginals_from_traces(traces)
+            assert abs(marginals[True] - 0.6) < 1e-10
+
+    def test_all_paths_rejected(self):
+        """Should raise if every path is rejected."""
+
+        def impossible():
+            x = flip(0.5)
+            condition(False)
+            return x
+
+        with pytest.raises(RuntimeError, match="all execution paths were rejected"):
+            enumerate_executions(impossible)
+
+    def test_continuous_distribution_raises(self):
+        """Enumeration should raise a clear error for continuous distributions."""
+
+        def continuous_model():
+            return sample(Normal(0, 1))
+
+        with pytest.raises(RuntimeError, match="no finite support"):
+            enumerate_executions(continuous_model)
+
+    def test_infer_enumerate_method(self):
+        """Enumeration should be accessible via infer(method='enumerate')."""
+        from cathedral.model import infer
+
+        @model
+        def coin():
+            fair = flip(0.5)
+            result = flip(0.5 if fair else 0.9)
+            condition(result)
+            return fair
+
+        posterior = infer(coin, method="enumerate")
+        # With exact enumeration, P(fair|heads) = 5/14
+        expected = 0.25 / 0.7
+        assert abs(posterior.probability() - expected) < 1e-10
+
+    def test_enumerate_vs_rejection_agreement(self):
+        """Enumeration and rejection sampling should agree on a simple model."""
+        np.random.seed(42)
+
+        def model_fn():
+            a = flip(0.4)
+            b = flip(0.6)
+            condition(a or b)
+            return a
+
+        enum_traces = enumerate_executions(model_fn)
+        enum_marginals = marginals_from_traces(enum_traces)
+        exact_p_a = enum_marginals[True]
+
+        rej_traces = rejection_sample(model_fn, num_samples=20000)
+        rej_p_a = sum(t.result for t in rej_traces) / len(rej_traces)
+
+        assert abs(exact_p_a - rej_p_a) < 0.02

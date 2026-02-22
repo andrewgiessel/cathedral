@@ -21,6 +21,15 @@ class Rejected(Exception):
     """Raised when a condition() call fails during traced execution."""
 
 
+class NeedsEnumeration(Exception):
+    """Raised during enumeration when sample() hits an un-intervened discrete site."""
+
+    def __init__(self, address: str, distribution: Distribution):
+        self.address = address
+        self.distribution = distribution
+        super().__init__(f"Enumeration fork at {address}")
+
+
 @dataclass
 class Choice:
     """A single random choice recorded in a trace."""
@@ -78,9 +87,10 @@ class TraceContext:
     (for replay/MH proposals).
     """
 
-    def __init__(self, interventions: dict[str, Any] | None = None):
+    def __init__(self, interventions: dict[str, Any] | None = None, enumerate_mode: bool = False):
         self.trace = Trace()
         self.interventions = interventions or {}
+        self.enumerate_mode = enumerate_mode
         self._counter: int = 0
         self._address_counts: dict[str, int] = {}
         self._memo_caches: dict[int, dict] = {}
@@ -127,6 +137,7 @@ def run_with_trace(
     args: tuple = (),
     kwargs: dict | None = None,
     interventions: dict[str, Any] | None = None,
+    enumerate_mode: bool = False,
 ) -> Trace:
     """Execute a function within a fresh tracing context and return the trace.
 
@@ -135,17 +146,20 @@ def run_with_trace(
         args: Positional arguments to pass to fn.
         kwargs: Keyword arguments to pass to fn.
         interventions: Optional dict mapping addresses to values to intervene on.
+        enumerate_mode: If True, sample() raises NeedsEnumeration for
+            un-intervened discrete sites instead of sampling randomly.
 
     Returns:
         The completed Trace.
 
     Raises:
         Rejected: If a condition() call fails during execution.
+        NeedsEnumeration: If enumerate_mode is True and a discrete site needs expansion.
     """
     if kwargs is None:
         kwargs = {}
 
-    ctx = TraceContext(interventions=interventions)
+    ctx = TraceContext(interventions=interventions, enumerate_mode=enumerate_mode)
     token = _TRACE.set(ctx)
     try:
         result = fn(*args, **kwargs)

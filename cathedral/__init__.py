@@ -34,7 +34,7 @@ from cathedral.distributions import (
 )
 from cathedral.model import Posterior, infer, model
 from cathedral.primitives import DPmem, condition, factor, flip, mem, observe, sample
-from cathedral.trace import Rejected, Trace
+from cathedral.trace import NeedsEnumeration, Rejected, Trace
 
 __all__ = [
     "Bernoulli",
@@ -46,6 +46,7 @@ __all__ = [
     "Gamma",
     "Geometric",
     "HalfNormal",
+    "NeedsEnumeration",
     "Normal",
     "Poisson",
     "Posterior",

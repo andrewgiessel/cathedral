@@ -239,6 +239,38 @@ Small additions inspired by Church's standard library that could be added increm
 
 ---
 
+## Performance & Parallelization (Parked)
+
+Documented from an earlier analysis — intentionally deferred until the codebase is better understood and the algorithmic foundations (custom proposals, HMC, XRPs) are in place. Adding concurrency to code we're still actively changing is a recipe for pain.
+
+### Parallelization
+
+Three of the four engines are straightforwardly parallelizable:
+
+**Rejection & importance sampling — embarrassingly parallel.** Every `run_with_trace()` call is independent. Split `num_samples` across `ProcessPoolExecutor` workers. `contextvars` are per-thread/per-process by design, so each worker gets isolated trace state with no races. Must use processes (not threads) because Cathedral models are interpreter-bound, not NumPy-bound — the GIL blocks true thread-level parallelism.
+
+**MH — multiple independent chains.** Sequential within a chain, but K chains can run in parallel and merge samples. This also unlocks R-hat / Gelman-Rubin convergence diagnostics for free. Standard approach in Stan/PyMC.
+
+**Enumeration — parallel branch exploration.** After the first fork, branches are independent. A work-stealing pattern over a shared worklist could parallelize this, though coordination is more complex than the other two.
+
+### Non-parallelization speed wins
+
+| Idea | Effort | Impact |
+|------|--------|--------|
+| `slots=True` on `Choice` and `Trace` dataclasses | Trivial | 10-20% less allocation overhead |
+| Analytical `log_prob` for Beta, Gamma, Poisson, Geometric, Dirichlet (currently delegate to scipy which has per-call validation overhead) | Low | 2-5x per `log_prob` call |
+| Modern RNG: `numpy.random.Generator` + `.spawn()` for reproducible parallel streams | Low | Modest + deterministic parallel runs |
+| Vectorized batch sampling for fixed-structure models: detect no stochastic control flow, batch-sample all random values as NumPy arrays, skip per-sample Python loop | Medium | 10-100x for applicable models |
+| Trace allocation reuse: pre-allocate and recycle `TraceContext`/`Trace`/`Choice` objects in hot loops | Medium | Reduces GC pressure on long runs |
+
+### Why we're waiting
+
+1. Layers 8-11 will significantly change the inference engines (new proposal mechanisms, AD, XRP registry, temperature schedules). Parallelizing code that's about to be rewritten wastes effort.
+2. We need profiling data on real models to know where time actually goes — it might be `log_prob`, or trace allocation, or model execution. Optimizing the wrong thing is worse than not optimizing.
+3. The `slots=True` and analytical `log_prob` changes are safe to do anytime as isolated PRs. They don't interact with the algorithmic work.
+
+---
+
 ## Recommended Build Order
 
 ```

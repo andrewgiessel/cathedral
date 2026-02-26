@@ -28,13 +28,12 @@ def sprinkler():
     condition(wet)
     return {"rain": rain, "sprinkler": sprinkler_on}
 
-# Exact answer via enumeration
 posterior = infer(sprinkler, method="enumerate")
-print(f"P(rain | wet grass) = {posterior.probability('rain'):.4f}")  # 0.4615...
+print(f"P(rain | wet grass) = {posterior.probability('rain'):.4f}")
+# P(rain | wet grass) = 0.4615
 
-# Or approximate via sampling
-posterior = infer(sprinkler, method="rejection", num_samples=10000)
-posterior = infer(sprinkler, method="mh", num_samples=5000, burn_in=1000)
+print(f"P(sprinkler | wet grass) = {posterior.probability('sprinkler'):.4f}")
+# P(sprinkler | wet grass) = 0.7094
 ```
 
 ## Installation
@@ -47,6 +46,103 @@ pip install cathedral[viz]
 ```
 
 Requires Python >= 3.10, numpy, and scipy.
+
+## Bayesian Inference in Action
+
+### Medical Diagnosis
+
+A disease has 1% base rate, but produces two symptoms with high probability. What happens when a patient presents with both?
+
+```python
+@model
+def medical_diagnosis():
+    disease = flip(0.01)
+    if disease:
+        symptom_a = flip(0.9)
+        symptom_b = flip(0.8)
+    else:
+        symptom_a = flip(0.05)
+        symptom_b = flip(0.1)
+    condition(symptom_a and symptom_b)
+    return disease
+
+posterior = infer(medical_diagnosis, method="enumerate")
+```
+
+<p align="center"><img src="assets/posterior_medical.png" width="450"/></p>
+
+Despite the low base rate, observing both symptoms raises P(disease) to 59% — a classic base-rate neglect problem that exact enumeration gets right.
+
+### Bayesian Linear Regression
+
+```python
+@model
+def line_model():
+    slope = sample(Normal(0, 5), name="slope")
+    intercept = sample(Normal(0, 5), name="intercept")
+    for x, y in zip(xs, ys):
+        observe(Normal(slope * x + intercept, 0.5), y)
+    return {"slope": slope, "intercept": intercept}
+
+posterior = infer(line_model, method="importance", num_samples=10000)
+```
+
+<p align="center"><img src="assets/linear_regression.png" width="800"/></p>
+
+### Metropolis-Hastings: Inferring a Gaussian Mean
+
+Five observations near 3.0. MH explores the posterior, and the samples match the analytical solution:
+
+```python
+@model
+def gaussian_mean():
+    mu = sample(Normal(0, 5), name="mu")
+    for y in [3.0, 3.5, 2.5, 3.2, 2.8]:
+        observe(Normal(mu, 1), y)
+    return mu
+
+posterior = infer(gaussian_mean, method="mh", num_samples=2000, burn_in=500)
+```
+
+<p align="center"><img src="assets/mh_trace.png" width="800"/></p>
+
+### Model Comparison
+
+Observed 10 heads in a row. Is the coin fair, or biased? Bayes factors quantify the evidence:
+
+```python
+from cathedral.checks import compare_models
+
+p_fair = infer(fair_coin, method="importance", num_samples=10000)
+p_biased = infer(biased_coin, method="importance", num_samples=10000)
+print(compare_models({"fair_coin": p_fair, "biased_coin": p_biased}))
+```
+
+<p align="center"><img src="assets/model_comparison.png" width="700"/></p>
+
+### Variable-Structure Traces
+
+Unlike PyMC or Stan, Cathedral supports **stochastic control flow** — different executions can have entirely different random variables. The toolkit tracks which addresses appear in which traces:
+
+```python
+@model
+def animal():
+    is_bird = flip(0.3, name="is_bird")
+    if is_bird:
+        can_fly = flip(0.8, name="can_fly")
+        has_beak = flip(0.99, name="has_beak")
+        return {"type": "bird", "flies": can_fly}
+    else:
+        is_mammal = flip(0.7, name="is_mammal")
+        if is_mammal:
+            has_fur = flip(0.95, name="has_fur")
+            return {"type": "mammal", "fur": has_fur}
+        else:
+            is_cold_blooded = flip(0.8, name="is_cold_blooded")
+            return {"type": "reptile"}
+```
+
+<p align="center"><img src="assets/variable_structure.png" width="800"/></p>
 
 ## Primitives
 
@@ -69,20 +165,6 @@ Requires Python >= 3.10, numpy, and scipy.
 | **Single-site MH** | `infer(m, method="mh")` | Complex models, rare conditions, many latent variables |
 | **Exact enumeration** | `infer(m, method="enumerate")` | Small discrete models where you want exact answers |
 
-### MH options
-
-```python
-infer(model, method="mh", num_samples=5000, burn_in=1000, lag=2)
-```
-
-### Enumeration options
-
-```python
-infer(model, method="enumerate", strategy="likely_first", max_executions=1000)
-```
-
-Strategies: `depth_first` (default), `breadth_first`, `likely_first`.
-
 ## Distributions
 
 **Continuous:** `Normal`, `HalfNormal`, `Beta`, `Gamma`, `Uniform`
@@ -98,17 +180,17 @@ All distributions support `.sample()`, `.log_prob(value)`, and `.prob(value)`. D
 ```python
 posterior = infer(my_model, method="rejection", num_samples=5000)
 
-posterior.mean("param")                  # posterior mean
-posterior.std("param")                   # posterior std
-posterior.probability("flag")            # P(flag = True)
-posterior.probability(lambda r: r > 0)   # P(predicate)
-posterior.histogram("param")             # empirical distribution
+posterior.mean("param")                     # posterior mean
+posterior.std("param")                      # posterior std
+posterior.probability("flag")               # P(flag = True)
+posterior.probability(lambda r: r > 0)      # P(predicate)
+posterior.histogram("param")                # empirical distribution
 posterior.credible_interval(0.95, "param")  # 95% credible interval
 ```
 
 ## Diagnostics & Model Understanding
 
-Every inference run now returns diagnostic metadata automatically:
+Every inference run returns diagnostic metadata automatically:
 
 ```python
 posterior = infer(sprinkler, method="rejection", num_samples=1000)
@@ -119,10 +201,10 @@ print(posterior.diagnostics())
 #   acceptance rate: 0.5903
 #   fixed structure: True
 
-posterior.acceptance_rate     # fraction of proposals accepted (rejection/MH)
-posterior.ess                 # effective sample size (importance/enumeration)
-posterior.log_marginal_likelihood  # for model comparison (importance/enumerate)
-posterior.has_fixed_structure # whether all traces share the same addresses
+posterior.acceptance_rate          # fraction accepted (rejection/MH)
+posterior.ess                     # effective sample size (importance/enumerate)
+posterior.log_marginal_likelihood  # for model comparison
+posterior.has_fixed_structure      # all traces share the same addresses?
 ```
 
 ### Prior Predictive Checks
@@ -130,50 +212,29 @@ posterior.has_fixed_structure # whether all traces share the same addresses
 ```python
 from cathedral.checks import prior_predictive, condition_acceptance_rate
 
-# Forward-sample to see what the model generates before conditioning
 pp = prior_predictive(sprinkler, num_samples=5000)
-print(f"Prior P(rain) = {pp.mean('rain'):.3f}")
 
 # How hard is your inference problem?
 rate = condition_acceptance_rate(sprinkler, num_samples=10000)
-print(f"Condition satisfied {rate:.1%} of the time")
-```
-
-### Posterior Predictive Checks
-
-```python
-from cathedral.checks import posterior_predictive
-
-# Replay the model with posterior latent values to generate new data
-pp = posterior_predictive(posterior, my_model, num_samples=200)
-```
-
-### Model Comparison
-
-```python
-from cathedral.checks import compare_models
-
-pa = infer(model_a, method="enumerate")
-pb = infer(model_b, method="enumerate")
-print(compare_models({"model_a": pa, "model_b": pb}))
-# Reports log marginal likelihood and Bayes factors
+# "Condition satisfied 58.5% of the time"
 ```
 
 ### Trace Visualization
 
 ```python
-from cathedral.viz import print_trace, structure_summary, address_frequency, trace_to_dot
+from cathedral.viz import print_trace, structure_summary, trace_to_dot
 
-# Text tree of a single trace (uses scope_path for hierarchy)
-posterior = infer(my_model, method="rejection", num_samples=100, capture_scopes=True)
+posterior = infer(my_model, method="rejection", capture_scopes=True)
 print_trace(posterior.traces[0])
+# Trace (result=..., log_joint=-2.3026, 3 choices)
+# └── [sprinkler]
+#     ├── rain = False  (-1.2040)
+#     ├── sprinkler = True  (-0.6931)
+#     └── wet = True  (-0.2231)
 
-# Posterior structure analysis (especially useful for variable-structure models)
 print(structure_summary(posterior))
-print(address_frequency(posterior))
 
-# Graphviz DOT output
-dot = trace_to_dot(posterior.traces[0])
+dot = trace_to_dot(posterior.traces[0])  # Graphviz DOT output
 ```
 
 ### Diagnostic Plots (requires `cathedral[viz]`)
@@ -181,18 +242,17 @@ dot = trace_to_dot(posterior.traces[0])
 ```python
 from cathedral.plots import plot_posterior, plot_weights, plot_trace_values, plot_ess
 
-plot_posterior(posterior, key="rain")        # histogram/KDE of return values
-plot_weights(posterior)                      # importance weight distribution
-plot_trace_values(posterior, "rain")         # mixing diagnostic for MH
-plot_ess(posterior)                          # ESS per address
+plot_posterior(posterior, key="rain")
+plot_weights(posterior)          # importance weight distribution
+plot_trace_values(posterior, "mu")  # MH mixing diagnostic
+plot_ess(posterior)              # ESS per address
 ```
 
 ### ArviZ Integration (requires `cathedral[viz]`)
 
 ```python
-# Convert fixed-structure posteriors to ArviZ InferenceData
 idata = posterior.to_arviz()
-# Then use the full ArviZ visualization/diagnostic suite
+# → arviz.InferenceData with posterior group, ready for az.plot_trace(), etc.
 ```
 
 ## Examples
@@ -221,7 +281,7 @@ User code           Trace engine           Inference
 @model fn    →    TraceContext      →    rejection / importance
 flip/sample  →    Choice records    →    MH (propose + accept)
 condition    →    log_score         →    enumeration (worklist)
-observe      →    log_score         →    Posterior
+observe      →    log_score         →    Posterior + diagnostics
 ```
 
 ## References

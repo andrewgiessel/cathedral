@@ -41,6 +41,9 @@ posterior = infer(sprinkler, method="mh", num_samples=5000, burn_in=1000)
 
 ```bash
 pip install cathedral
+
+# With visualization extras (matplotlib, graphviz, arviz)
+pip install cathedral[viz]
 ```
 
 Requires Python >= 3.10, numpy, and scipy.
@@ -101,6 +104,95 @@ posterior.probability("flag")            # P(flag = True)
 posterior.probability(lambda r: r > 0)   # P(predicate)
 posterior.histogram("param")             # empirical distribution
 posterior.credible_interval(0.95, "param")  # 95% credible interval
+```
+
+## Diagnostics & Model Understanding
+
+Every inference run now returns diagnostic metadata automatically:
+
+```python
+posterior = infer(sprinkler, method="rejection", num_samples=1000)
+print(posterior.diagnostics())
+# Posterior: 1000 samples
+#   method: rejection
+#   attempts: 1694
+#   acceptance rate: 0.5903
+#   fixed structure: True
+
+posterior.acceptance_rate     # fraction of proposals accepted (rejection/MH)
+posterior.ess                 # effective sample size (importance/enumeration)
+posterior.log_marginal_likelihood  # for model comparison (importance/enumerate)
+posterior.has_fixed_structure # whether all traces share the same addresses
+```
+
+### Prior Predictive Checks
+
+```python
+from cathedral.checks import prior_predictive, condition_acceptance_rate
+
+# Forward-sample to see what the model generates before conditioning
+pp = prior_predictive(sprinkler, num_samples=5000)
+print(f"Prior P(rain) = {pp.mean('rain'):.3f}")
+
+# How hard is your inference problem?
+rate = condition_acceptance_rate(sprinkler, num_samples=10000)
+print(f"Condition satisfied {rate:.1%} of the time")
+```
+
+### Posterior Predictive Checks
+
+```python
+from cathedral.checks import posterior_predictive
+
+# Replay the model with posterior latent values to generate new data
+pp = posterior_predictive(posterior, my_model, num_samples=200)
+```
+
+### Model Comparison
+
+```python
+from cathedral.checks import compare_models
+
+pa = infer(model_a, method="enumerate")
+pb = infer(model_b, method="enumerate")
+print(compare_models({"model_a": pa, "model_b": pb}))
+# Reports log marginal likelihood and Bayes factors
+```
+
+### Trace Visualization
+
+```python
+from cathedral.viz import print_trace, structure_summary, address_frequency, trace_to_dot
+
+# Text tree of a single trace (uses scope_path for hierarchy)
+posterior = infer(my_model, method="rejection", num_samples=100, capture_scopes=True)
+print_trace(posterior.traces[0])
+
+# Posterior structure analysis (especially useful for variable-structure models)
+print(structure_summary(posterior))
+print(address_frequency(posterior))
+
+# Graphviz DOT output
+dot = trace_to_dot(posterior.traces[0])
+```
+
+### Diagnostic Plots (requires `cathedral[viz]`)
+
+```python
+from cathedral.plots import plot_posterior, plot_weights, plot_trace_values, plot_ess
+
+plot_posterior(posterior, key="rain")        # histogram/KDE of return values
+plot_weights(posterior)                      # importance weight distribution
+plot_trace_values(posterior, "rain")         # mixing diagnostic for MH
+plot_ess(posterior)                          # ESS per address
+```
+
+### ArviZ Integration (requires `cathedral[viz]`)
+
+```python
+# Convert fixed-structure posteriors to ArviZ InferenceData
+idata = posterior.to_arviz()
+# Then use the full ArviZ visualization/diagnostic suite
 ```
 
 ## Examples

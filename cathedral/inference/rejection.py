@@ -21,6 +21,7 @@ def rejection_sample(
     kwargs: dict[str, Any] | None = None,
     num_samples: int = 1000,
     max_attempts: int | None = None,
+    _info: dict | None = None,
 ) -> list[Trace]:
     """Run rejection sampling on a model.
 
@@ -31,6 +32,7 @@ def rejection_sample(
         num_samples: Number of accepted samples to collect.
         max_attempts: Maximum total attempts before giving up.
             Defaults to num_samples * 1000.
+        _info: If provided, populated with diagnostic metadata.
 
     Returns:
         A list of accepted Traces.
@@ -59,5 +61,9 @@ def rejection_sample(
             samples.append(trace)
         except Rejected:
             continue
+
+    if _info is not None:
+        _info["num_attempts"] = attempts
+        _info["acceptance_rate"] = len(samples) / attempts if attempts > 0 else 0.0
 
     return samples

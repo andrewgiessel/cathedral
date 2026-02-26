@@ -10,6 +10,7 @@ from __future__ import annotations
 import functools
 from collections import Counter
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -18,7 +19,21 @@ from cathedral.inference.enumeration import enumerate_executions
 from cathedral.inference.importance import importance_sample
 from cathedral.inference.mh import mh_sample
 from cathedral.inference.rejection import rejection_sample
-from cathedral.trace import Trace
+from cathedral.trace import Trace, _CAPTURE_SCOPES
+
+
+@dataclass
+class InferenceInfo:
+    """Diagnostic metadata from an inference run."""
+
+    method: str
+    num_samples: int
+    num_attempts: int | None = None
+    acceptance_rate: float | None = None
+    log_weights: np.ndarray | None = field(default=None, repr=False)
+    log_marginal_likelihood: float | None = None
+    ess: float | None = None
+    extra: dict = field(default_factory=dict)
 
 
 def model(fn: Callable) -> Callable:
@@ -45,12 +60,18 @@ class Posterior:
     like enumeration where traces have unequal probabilities.
     """
 
-    def __init__(self, traces: list[Trace], weights: np.ndarray | None = None):
+    def __init__(
+        self,
+        traces: list[Trace],
+        weights: np.ndarray | None = None,
+        info: InferenceInfo | None = None,
+    ):
         if not traces:
             raise ValueError("Posterior requires at least one trace")
         self._traces = traces
         self._results = [t.result for t in traces]
         self._weights = weights
+        self.info = info
 
     @property
     def traces(self) -> list[Trace]:
@@ -66,6 +87,115 @@ class Posterior:
     def num_samples(self) -> int:
         """Number of samples in the posterior."""
         return len(self._traces)
+
+    @property
+    def has_fixed_structure(self) -> bool:
+        """Whether all traces share the same set of choice addresses."""
+        if not self._traces:
+            return True
+        reference = set(self._traces[0].choices.keys())
+        return all(set(t.choices.keys()) == reference for t in self._traces)
+
+    @property
+    def ess(self) -> float | None:
+        """Effective sample size, if available from inference."""
+        if self.info is not None and self.info.ess is not None:
+            return self.info.ess
+        if self._weights is not None:
+            return 1.0 / float(np.sum(self._weights**2))
+        return None
+
+    @property
+    def acceptance_rate(self) -> float | None:
+        """Acceptance rate, if available from inference."""
+        if self.info is not None:
+            return self.info.acceptance_rate
+        return None
+
+    @property
+    def log_marginal_likelihood(self) -> float | None:
+        """Log marginal likelihood estimate, if available from inference."""
+        if self.info is not None:
+            return self.info.log_marginal_likelihood
+        return None
+
+    def to_arviz(self, chain_id: int = 0) -> Any:
+        """Convert this Posterior to an ArviZ InferenceData object.
+
+        Only works for fixed-structure posteriors where all traces share
+        the same set of choice addresses with numeric values.
+
+        Requires arviz to be installed: ``pip install cathedral[viz]``
+
+        Args:
+            chain_id: Chain identifier for the ArviZ dataset.
+
+        Returns:
+            An arviz.InferenceData object.
+
+        Raises:
+            ImportError: If arviz is not installed.
+            ValueError: If the posterior has variable structure.
+        """
+        try:
+            import arviz as az
+        except ImportError as e:
+            raise ImportError(
+                "to_arviz() requires arviz. Install it with: pip install cathedral[viz]"
+            ) from e
+
+        if not self.has_fixed_structure:
+            raise ValueError(
+                "to_arviz() requires fixed-structure traces (all traces must "
+                "have the same choice addresses). Use structure_summary() to "
+                "inspect your posterior's structure."
+            )
+
+        if not self._traces:
+            raise ValueError("No traces in posterior")
+
+        addresses = list(self._traces[0].choices.keys())
+        posterior_dict: dict[str, np.ndarray] = {}
+
+        for addr in addresses:
+            values = []
+            for t in self._traces:
+                v = t.choices[addr].value
+                if isinstance(v, (bool, np.bool_)):
+                    values.append(float(v))
+                elif isinstance(v, (int, float, np.integer, np.floating)):
+                    values.append(float(v))
+                else:
+                    values.append(v)
+            try:
+                posterior_dict[addr] = np.array(values)[np.newaxis, :]
+            except (ValueError, TypeError):
+                pass
+
+        return az.from_dict(posterior=posterior_dict)
+
+    def diagnostics(self) -> str:
+        """Return a human-readable summary of inference diagnostics."""
+        lines: list[str] = []
+        lines.append(f"Posterior: {self.num_samples} samples")
+        if self.info is not None:
+            lines.append(f"  method: {self.info.method}")
+            if self.info.num_attempts is not None:
+                lines.append(f"  attempts: {self.info.num_attempts}")
+            if self.info.acceptance_rate is not None:
+                lines.append(f"  acceptance rate: {self.info.acceptance_rate:.4f}")
+            if self.info.ess is not None:
+                lines.append(f"  ESS: {self.info.ess:.1f}")
+            if self.info.log_marginal_likelihood is not None:
+                lines.append(f"  log marginal likelihood: {self.info.log_marginal_likelihood:.4f}")
+            if self.info.extra:
+                for k, v in self.info.extra.items():
+                    lines.append(f"  {k}: {v}")
+        ess = self.ess
+        if ess is not None and self.info is not None and self.info.ess is None:
+            lines.append(f"  ESS (from weights): {ess:.1f}")
+        lines.append(f"  fixed structure: {self.has_fixed_structure}")
+        return "\n".join(lines)
 
     def mean(self, key: str | None = None) -> float:
         """Compute the posterior mean.
@@ -233,6 +363,7 @@ def infer(
     *args: Any,
     method: str = "rejection",
     num_samples: int = 1000,
+    capture_scopes: bool = False,
     **kwargs: Any,
 ) -> Posterior:
     """Run probabilistic inference on a model.
@@ -246,12 +377,30 @@ def infer(
             - "mh": Single-site Metropolis-Hastings (for complex models, supports burn_in and lag kwargs)
             - "enumerate": Exact enumeration (for small discrete models, supports strategy and max_executions)
         num_samples: Number of posterior samples to collect.
+        capture_scopes: If True, record scope paths on each choice via
+            Python stack introspection. Useful for trace visualization.
         **kwargs: Additional keyword arguments passed to the inference engine.
 
     Returns:
         A Posterior object for analyzing the results.
     """
     fn = getattr(model_fn, "_original_fn", model_fn)
+
+    token = _CAPTURE_SCOPES.set(capture_scopes)
+    try:
+        return _run_inference(fn, args, method, num_samples, **kwargs)
+    finally:
+        _CAPTURE_SCOPES.reset(token)
+
+
+def _run_inference(
+    fn: Callable,
+    args: tuple,
+    method: str,
+    num_samples: int,
+    **kwargs: Any,
+) -> Posterior:
+    engine_info: dict = {}
 
     if method == "rejection":
         max_attempts = kwargs.pop("max_attempts", None)
@@ -260,7 +409,16 @@ def infer(
             args=args,
             num_samples=num_samples,
             max_attempts=max_attempts,
+            _info=engine_info,
         )
+        info = InferenceInfo(
+            method="rejection",
+            num_samples=len(traces),
+            num_attempts=engine_info.get("num_attempts"),
+            acceptance_rate=engine_info.get("acceptance_rate"),
+        )
+        return Posterior(traces, info=info)
+
     elif method == "importance":
         resample = kwargs.pop("resample", True)
         traces = importance_sample(
@@ -268,7 +426,18 @@ def infer(
             args=args,
             num_samples=num_samples,
             resample=resample,
+            _info=engine_info,
         )
+        info = InferenceInfo(
+            method="importance",
+            num_samples=len(traces),
+            num_attempts=engine_info.get("num_attempts"),
+            log_weights=engine_info.get("log_weights"),
+            log_marginal_likelihood=engine_info.get("log_marginal_likelihood"),
+            ess=engine_info.get("ess"),
+        )
+        return Posterior(traces, info=info)
+
     elif method == "mh":
         burn_in = kwargs.pop("burn_in", None)
         lag = kwargs.pop("lag", 1)
@@ -278,7 +447,20 @@ def infer(
             num_samples=num_samples,
             burn_in=burn_in,
             lag=lag,
+            _info=engine_info,
         )
+        info = InferenceInfo(
+            method="mh",
+            num_samples=len(traces),
+            acceptance_rate=engine_info.get("acceptance_rate"),
+            extra={
+                "total_steps": engine_info.get("total_steps"),
+                "burn_in": engine_info.get("burn_in"),
+                "lag": engine_info.get("lag"),
+            },
+        )
+        return Posterior(traces, info=info)
+
     elif method == "enumerate":
         max_executions = kwargs.pop("max_executions", None)
         strategy = kwargs.pop("strategy", "depth_first")
@@ -287,15 +469,24 @@ def infer(
             args=args,
             max_executions=max_executions,
             strategy=strategy,
+            _info=engine_info,
         )
         log_joints = np.array([t.log_joint for t in traces])
         max_lj = np.max(log_joints)
         weights = np.exp(log_joints - max_lj)
         weights /= weights.sum()
-        return Posterior(traces, weights=weights)
+        info = InferenceInfo(
+            method="enumerate",
+            num_samples=len(traces),
+            log_marginal_likelihood=engine_info.get("log_marginal_likelihood"),
+            extra={
+                "num_paths": engine_info.get("num_paths"),
+                "exhaustive": engine_info.get("exhaustive"),
+            },
+        )
+        return Posterior(traces, weights=weights, info=info)
+
     else:
         raise ValueError(
             f"Unknown inference method: {method!r}. Choose from: 'rejection', 'importance', 'mh', 'enumerate'"
         )
-
-    return Posterior(traces)

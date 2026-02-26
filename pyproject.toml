@@ -145,3 +145,4 @@ commit_args = ""
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov"]
+viz = ["matplotlib>=3.5", "graphviz>=0.20", "arviz>=0.15"]

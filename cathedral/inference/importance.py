@@ -25,6 +25,7 @@ def importance_sample(
     kwargs: dict[str, Any] | None = None,
     num_samples: int = 1000,
     resample: bool = True,
+    _info: dict | None = None,
 ) -> list[Trace]:
     """Run likelihood-weighted importance sampling on a model.
 
@@ -39,6 +40,7 @@ def importance_sample(
         num_samples: Number of samples to draw from the prior.
         resample: If True, resample proportional to weights to produce
             an unweighted sample set of the same size.
+        _info: If provided, populated with diagnostic metadata.
 
     Returns:
         A list of Traces (resampled if resample=True).
@@ -48,6 +50,7 @@ def importance_sample(
 
     traces: list[Trace] = []
     log_weights: list[float] = []
+    num_rejected = 0
 
     for _ in range(num_samples):
         try:
@@ -55,6 +58,7 @@ def importance_sample(
             traces.append(trace)
             log_weights.append(trace.log_score)
         except Rejected:
+            num_rejected += 1
             continue
 
     if not traces:
@@ -63,10 +67,22 @@ def importance_sample(
             "Check that your model doesn't have unsatisfiable condition() calls."
         )
 
+    log_weights_arr = np.array(log_weights)
+
+    if _info is not None:
+        _info["num_attempts"] = num_samples
+        _info["num_rejected"] = num_rejected
+        _info["log_weights"] = log_weights_arr.copy()
+        max_lw = np.max(log_weights_arr)
+        if not (math.isinf(max_lw) and max_lw < 0):
+            ws = np.exp(log_weights_arr - max_lw)
+            _info["log_marginal_likelihood"] = max_lw + math.log(np.mean(ws))
+            ws_norm = ws / ws.sum()
+            _info["ess"] = 1.0 / float(np.sum(ws_norm**2))
+
     if not resample:
         return traces
 
-    log_weights_arr = np.array(log_weights)
     max_log_w = np.max(log_weights_arr)
 
     if math.isinf(max_log_w) and max_log_w < 0:

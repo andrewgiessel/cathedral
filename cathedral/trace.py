@@ -8,6 +8,7 @@ to pass trace objects explicitly.
 
 from __future__ import annotations
 
+import sys
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
@@ -15,6 +16,7 @@ from typing import Any
 from cathedral.distributions import Distribution
 
 _TRACE: ContextVar[TraceContext | None] = ContextVar("cathedral_trace", default=None)
+_CAPTURE_SCOPES: ContextVar[bool] = ContextVar("cathedral_capture_scopes", default=False)
 
 
 class Rejected(Exception):
@@ -38,6 +40,7 @@ class Choice:
     distribution: Distribution
     value: Any
     log_prob: float
+    scope_path: tuple[str, ...] = ()
 
 
 @dataclass
@@ -73,7 +76,8 @@ class Trace:
             lines.append(f"  log_score: {self.log_score:.4f}")
         lines.append(f"  choices ({len(self.choices)}):")
         for addr, choice in self.choices.items():
-            lines.append(f"    {addr}: {choice.value!r}  (log_prob={choice.log_prob:.4f}, {choice.distribution})")
+            scope = f"  [{'/'.join(choice.scope_path)}]" if choice.scope_path else ""
+            lines.append(f"    {addr}: {choice.value!r}  (log_prob={choice.log_prob:.4f}, {choice.distribution}){scope}")
         return "\n".join(lines)
 
     def __repr__(self) -> str:
@@ -83,17 +87,25 @@ class Trace:
 class TraceContext:
     """Manages trace state during model execution.
 
-    Handles auto-addressing of sample sites and optional interventions
-    (for replay/MH proposals).
+    Handles auto-addressing of sample sites, optional interventions
+    (for replay/MH proposals), and optional scope tracking for
+    trace visualization.
     """
 
-    def __init__(self, interventions: dict[str, Any] | None = None, enumerate_mode: bool = False):
+    def __init__(
+        self,
+        interventions: dict[str, Any] | None = None,
+        enumerate_mode: bool = False,
+        capture_scopes: bool = False,
+    ):
         self.trace = Trace()
         self.interventions = interventions or {}
         self.enumerate_mode = enumerate_mode
         self._counter: int = 0
         self._address_counts: dict[str, int] = {}
         self._memo_caches: dict[int, dict] = {}
+        self._scope_stack: list[str] = []
+        self._capture_scopes = capture_scopes
 
     def fresh_address(self, prefix: str = "sample") -> str:
         """Generate a unique address for a sample site."""
@@ -103,10 +115,57 @@ class TraceContext:
             return prefix
         return f"{prefix}__{count}"
 
+    def push_scope(self, name: str) -> None:
+        """Push a named scope onto the scope stack."""
+        self._scope_stack.append(name)
+
+    def pop_scope(self) -> None:
+        """Pop the innermost scope from the scope stack."""
+        self._scope_stack.pop()
+
     def record_choice(self, address: str, distribution: Distribution, value: Any) -> None:
         """Record a random choice in the trace."""
         log_p = distribution.log_prob(value)
-        self.trace.choices[address] = Choice(address, distribution, value, log_p)
+        scope_path = self._resolve_scope()
+        self.trace.choices[address] = Choice(address, distribution, value, log_p, scope_path)
+
+    def _resolve_scope(self) -> tuple[str, ...]:
+        """Determine the current scope path for a choice being recorded.
+
+        When capture_scopes is False, returns only explicit scopes from
+        mem()/DPmem() push_scope calls.
+
+        When capture_scopes is True, walks the Python call stack to extract
+        user function names, combined with explicit scope names for
+        mem()/DPmem() boundaries (replacing <lambda> frames).
+        """
+        if not self._capture_scopes:
+            return tuple(self._scope_stack)
+
+        path: list[str] = []
+        scope_items = list(self._scope_stack)
+
+        frame = sys._getframe()
+        while frame is not None:
+            func_name = frame.f_code.co_name
+            module = frame.f_globals.get("__name__", "")
+
+            if func_name == "run_with_trace":
+                break
+
+            if module.startswith("cathedral"):
+                # Emit the explicit scope name for mem/DPmem wrappers
+                if func_name in ("memoized", "dp_memoized") and scope_items:
+                    path.append(scope_items.pop())
+            elif func_name == "<lambda>":
+                pass
+            elif not func_name.startswith("<"):
+                path.append(func_name)
+
+            frame = frame.f_back
+
+        path.reverse()
+        return tuple(path)
 
     def add_score(self, score: float) -> None:
         """Add to the accumulated log-score (from observe/factor)."""
@@ -138,6 +197,7 @@ def run_with_trace(
     kwargs: dict | None = None,
     interventions: dict[str, Any] | None = None,
     enumerate_mode: bool = False,
+    capture_scopes: bool | None = None,
 ) -> Trace:
     """Execute a function within a fresh tracing context and return the trace.
 
@@ -148,6 +208,9 @@ def run_with_trace(
         interventions: Optional dict mapping addresses to values to intervene on.
         enumerate_mode: If True, sample() raises NeedsEnumeration for
             un-intervened discrete sites instead of sampling randomly.
+        capture_scopes: If True, record scope paths on each choice via
+            Python stack introspection. If None, uses the value set by
+            infer(capture_scopes=...) or defaults to False.
 
     Returns:
         The completed Trace.
@@ -159,7 +222,12 @@ def run_with_trace(
     if kwargs is None:
         kwargs = {}
 
-    ctx = TraceContext(interventions=interventions, enumerate_mode=enumerate_mode)
+    should_capture = capture_scopes if capture_scopes is not None else _CAPTURE_SCOPES.get(False)
+    ctx = TraceContext(
+        interventions=interventions,
+        enumerate_mode=enumerate_mode,
+        capture_scopes=should_capture,
+    )
     token = _TRACE.set(ctx)
     try:
         result = fn(*args, **kwargs)

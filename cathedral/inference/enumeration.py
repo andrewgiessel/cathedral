@@ -42,6 +42,7 @@ def enumerate_executions(
     kwargs: dict[str, Any] | None = None,
     max_executions: int | None = None,
     strategy: str = "depth_first",
+    _info: dict | None = None,
 ) -> list[Trace]:
     """Enumerate all executions of a discrete probabilistic model.
 
@@ -123,6 +124,14 @@ def enumerate_executions(
         raise RuntimeError(
             "Enumeration: all execution paths were rejected. Check that your model has at least one satisfiable path."
         )
+
+    if _info is not None:
+        _info["num_completed"] = num_completed
+        _info["num_paths"] = len(completed)
+        log_joints = np.array([t.log_joint for t in completed])
+        max_lj = np.max(log_joints)
+        _info["log_marginal_likelihood"] = max_lj + math.log(np.sum(np.exp(log_joints - max_lj)))
+        _info["exhaustive"] = max_executions is None
 
     return completed
 

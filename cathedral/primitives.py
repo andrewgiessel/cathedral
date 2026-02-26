@@ -129,7 +129,7 @@ def _make_hashable(args: tuple) -> tuple:
     return tuple(result)
 
 
-def mem(fn: Callable) -> Callable:
+def mem(fn: Callable, *, name: str | None = None) -> Callable:
     """Stochastic memoization.
 
     Returns a version of fn that caches its return value for each unique
@@ -149,12 +149,14 @@ def mem(fn: Callable) -> Callable:
 
     Args:
         fn: The function to memoize.
+        name: Optional name for trace scoping (defaults to fn.__name__).
 
     Returns:
         A memoized version of fn with per-trace caching.
     """
     standalone_cache: dict = {}
     func_id = id(fn)
+    scope_name = f"mem({name or fn.__name__})"
 
     @functools.wraps(fn)
     def memoized(*args):
@@ -167,7 +169,13 @@ def mem(fn: Callable) -> Callable:
             cache = standalone_cache
 
         if key not in cache:
-            cache[key] = fn(*args)
+            if ctx is not None:
+                ctx.push_scope(scope_name)
+            try:
+                cache[key] = fn(*args)
+            finally:
+                if ctx is not None:
+                    ctx.pop_scope()
         return cache[key]
 
     memoized._is_memoized = True
@@ -175,7 +183,7 @@ def mem(fn: Callable) -> Callable:
     return memoized
 
 
-def DPmem(alpha: float, fn: Callable) -> Callable:
+def DPmem(alpha: float, fn: Callable, *, name: str | None = None) -> Callable:
     """Dirichlet Process stochastic memoizer.
 
     Like mem, but instead of always returning the cached value, it
@@ -188,12 +196,14 @@ def DPmem(alpha: float, fn: Callable) -> Callable:
     Args:
         alpha: Concentration parameter. Higher = more likely to sample new values.
         fn: The function to memoize.
+        name: Optional name for trace scoping (defaults to fn.__name__).
 
     Returns:
         A DP-memoized version of fn.
     """
     func_id = id(fn)
     standalone_cache: dict = {}
+    scope_name = f"DPmem({name or fn.__name__})"
 
     def dp_memoized(*args):
         ctx = get_trace_context()
@@ -213,7 +223,13 @@ def DPmem(alpha: float, fn: Callable) -> Callable:
         prob_new = alpha / (alpha + total_count)
 
         if not table["values"] or np.random.random() < prob_new:
-            result = fn(*args)
+            if ctx is not None:
+                ctx.push_scope(scope_name)
+            try:
+                result = fn(*args)
+            finally:
+                if ctx is not None:
+                    ctx.pop_scope()
             table["values"].append(result)
             table["counts"].append(1)
         else:

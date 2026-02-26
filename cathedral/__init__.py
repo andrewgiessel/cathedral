@@ -32,7 +32,7 @@ from cathedral.distributions import (
     Uniform,
     UniformDraw,
 )
-from cathedral.model import Posterior, infer, model
+from cathedral.model import InferenceInfo, Posterior, infer, model
 from cathedral.primitives import DPmem, condition, factor, flip, mem, observe, sample
 from cathedral.trace import NeedsEnumeration, Rejected, Trace
 
@@ -46,6 +46,7 @@ __all__ = [
     "Gamma",
     "Geometric",
     "HalfNormal",
+    "InferenceInfo",
     "NeedsEnumeration",
     "Normal",
     "Poisson",

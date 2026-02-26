@@ -32,6 +32,7 @@ def mh_sample(
     burn_in: int | None = None,
     lag: int = 1,
     max_init_attempts: int = 10000,
+    _info: dict | None = None,
 ) -> list[Trace]:
     """Run single-site Metropolis-Hastings on a model.
 
@@ -43,6 +44,7 @@ def mh_sample(
         burn_in: Steps to discard before collecting. Defaults to num_samples // 2.
         lag: Keep every nth sample after burn-in (thinning). Default 1 (keep all).
         max_init_attempts: Max forward-sampling tries to find a valid initial trace.
+        _info: If provided, populated with diagnostic metadata.
 
     Returns:
         A list of Traces from the posterior.
@@ -59,11 +61,21 @@ def mh_sample(
 
     total_steps = burn_in + num_samples * lag
     traces: list[Trace] = []
+    accepted = 0
 
     for step in range(total_steps):
+        prev = current
         current = _mh_step(model_fn, args, kwargs, current)
+        if current is not prev:
+            accepted += 1
         if step >= burn_in and (step - burn_in) % lag == 0:
             traces.append(current)
+
+    if _info is not None:
+        _info["total_steps"] = total_steps
+        _info["burn_in"] = burn_in
+        _info["lag"] = lag
+        _info["acceptance_rate"] = accepted / total_steps if total_steps > 0 else 0.0
 
     return traces
 

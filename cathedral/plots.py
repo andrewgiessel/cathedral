@@ -14,9 +14,7 @@ try:
     import matplotlib.pyplot as plt
     from matplotlib.figure import Figure
 except ImportError as e:
-    raise ImportError(
-        "cathedral.plots requires matplotlib. Install it with: pip install cathedral[viz]"
-    ) from e
+    raise ImportError("cathedral.plots requires matplotlib. Install it with: pip install cathedral[viz]") from e
 
 if TYPE_CHECKING:
     from cathedral.model import Posterior
@@ -49,12 +47,12 @@ def plot_posterior(
     else:
         fig = ax.get_figure()
 
-    is_numeric = all(isinstance(v, (int, float, np.integer, np.floating)) for v in values)
-    is_bool = all(isinstance(v, (bool, np.bool_)) for v in values)
+    is_numeric = all(isinstance(v, int | float | np.integer | np.floating) for v in values)
+    is_bool = all(isinstance(v, bool | np.bool_) for v in values)
 
     if is_bool or (not is_numeric):
         hist = posterior.histogram(key)
-        labels = [str(k) for k in hist.keys()]
+        labels = [str(k) for k in hist]
         probs = list(hist.values())
         ax.bar(labels, probs, color="steelblue", edgecolor="white")
         ax.set_ylabel("Probability")
@@ -113,7 +111,11 @@ def plot_weights(posterior: Posterior, *, ax: Any = None) -> Figure:
     ax.hist(weights, bins=50, color="steelblue", edgecolor="white", alpha=0.8)
     ax.set_xlabel("Normalized Weight")
     ax.set_ylabel("Count")
-    ax.set_title(f"Importance Weights (ESS={posterior.info.ess:.1f}/{len(log_w)})" if posterior.info.ess else "Importance Weights")
+    ax.set_title(
+        f"Importance Weights (ESS={posterior.info.ess:.1f}/{len(log_w)})"
+        if posterior.info.ess
+        else "Importance Weights"
+    )
     ax.axvline(1 / len(log_w), color="red", linestyle="--", alpha=0.7, label="Uniform")
     ax.legend()
 
@@ -190,7 +192,7 @@ def plot_ess(posterior: Posterior, *, ax: Any = None) -> Figure:
 
     for addr in addresses:
         vals = [t.choices[addr].value for t in traces]
-        is_numeric = all(isinstance(v, (int, float, np.integer, np.floating, bool, np.bool_)) for v in vals)
+        is_numeric = all(isinstance(v, int | float | np.integer | np.floating | bool | np.bool_) for v in vals)
         if not is_numeric:
             continue
         arr = np.array(vals, dtype=float)
@@ -208,7 +210,7 @@ def plot_ess(posterior: Posterior, *, ax: Any = None) -> Figure:
     names = list(ess_values.keys())
     ess_vals = [ess_values[n] for n in names]
 
-    bars = ax.bar(range(len(names)), ess_vals, color="steelblue", edgecolor="white")
+    ax.bar(range(len(names)), ess_vals, color="steelblue", edgecolor="white")
     ax.set_xticks(range(len(names)))
     ax.set_xticklabels(names, rotation=45, ha="right")
     ax.set_ylabel("ESS")

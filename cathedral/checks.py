@@ -50,8 +50,7 @@ def prior_predictive(
 
     if not traces:
         raise RuntimeError(
-            "prior_predictive: all forward samples were rejected. "
-            "This model may unconditionally call condition(False)."
+            "prior_predictive: all forward samples were rejected. This model may unconditionally call condition(False)."
         )
 
     info = InferenceInfo(

@@ -1,15 +1,15 @@
 """Tests for cathedral.plots: matplotlib-based diagnostic plots."""
 
+import matplotlib
 import numpy as np
 import pytest
 
-import matplotlib
 matplotlib.use("Agg")
 from matplotlib.figure import Figure
 
 from cathedral import model
 from cathedral.distributions import Normal
-from cathedral.model import InferenceInfo, Posterior, infer
+from cathedral.model import infer
 from cathedral.plots import plot_ess, plot_posterior, plot_trace_values, plot_weights
 from cathedral.primitives import condition, flip, observe, sample
 

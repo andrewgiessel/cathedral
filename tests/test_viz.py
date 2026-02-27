@@ -1,12 +1,11 @@
 """Tests for cathedral.viz: trace formatting, posterior analysis, DOT output."""
 
 import numpy as np
-import pytest
 
 from cathedral import model
 from cathedral.distributions import Normal
 from cathedral.model import Posterior, infer
-from cathedral.primitives import condition, flip, sample
+from cathedral.primitives import flip, sample
 from cathedral.trace import Choice, Trace, run_with_trace
 from cathedral.viz import (
     address_frequency,
@@ -150,8 +149,6 @@ class TestAddressFrequency:
         assert abs(freq["b"] + freq["c"] - 1.0) < 0.01
 
     def test_empty_posterior_returns_empty(self):
-        from cathedral.trace import Trace
-
         t = Trace(result=True, choices={}, log_score=0.0)
         p = Posterior([t])
         freq = address_frequency(p)
@@ -196,7 +193,6 @@ class TestCompareTraces:
 
     def test_same_structure_counts_changes(self):
         from cathedral.distributions import Bernoulli
-        from cathedral.trace import Choice, Trace
 
         c1 = Choice("x", Bernoulli(0.5), True, np.log(0.5))
         c2 = Choice("x", Bernoulli(0.5), False, np.log(0.5))

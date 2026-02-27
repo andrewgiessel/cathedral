@@ -77,7 +77,9 @@ class Trace:
         lines.append(f"  choices ({len(self.choices)}):")
         for addr, choice in self.choices.items():
             scope = f"  [{'/'.join(choice.scope_path)}]" if choice.scope_path else ""
-            lines.append(f"    {addr}: {choice.value!r}  (log_prob={choice.log_prob:.4f}, {choice.distribution}){scope}")
+            lines.append(
+                f"    {addr}: {choice.value!r}  (log_prob={choice.log_prob:.4f}, {choice.distribution}){scope}"
+            )
         return "\n".join(lines)
 
     def __repr__(self) -> str:

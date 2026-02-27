@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from cathedral import model
-from cathedral.distributions import Bernoulli, Categorical, Normal, UniformDraw
+from cathedral.distributions import Categorical, Normal, UniformDraw
 from cathedral.inference.enumeration import enumerate_executions, marginals_from_traces
 from cathedral.inference.importance import importance_sample
 from cathedral.inference.mh import mh_sample

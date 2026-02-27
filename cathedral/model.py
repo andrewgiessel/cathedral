@@ -7,6 +7,7 @@ analyzing results.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 from collections import Counter
 from collections.abc import Callable
@@ -19,7 +20,7 @@ from cathedral.inference.enumeration import enumerate_executions
 from cathedral.inference.importance import importance_sample
 from cathedral.inference.mh import mh_sample
 from cathedral.inference.rejection import rejection_sample
-from cathedral.trace import Trace, _CAPTURE_SCOPES
+from cathedral.trace import _CAPTURE_SCOPES, Trace
 
 
 @dataclass
@@ -140,9 +141,7 @@ class Posterior:
         try:
             import arviz as az
         except ImportError as e:
-            raise ImportError(
-                "to_arviz() requires arviz. Install it with: pip install cathedral[viz]"
-            ) from e
+            raise ImportError("to_arviz() requires arviz. Install it with: pip install cathedral[viz]") from e
 
         if not self.has_fixed_structure:
             raise ValueError(
@@ -161,16 +160,12 @@ class Posterior:
             values = []
             for t in self._traces:
                 v = t.choices[addr].value
-                if isinstance(v, (bool, np.bool_)):
-                    values.append(float(v))
-                elif isinstance(v, (int, float, np.integer, np.floating)):
+                if isinstance(v, bool | np.bool_ | int | float | np.integer | np.floating):
                     values.append(float(v))
                 else:
                     values.append(v)
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 posterior_dict[addr] = np.array(values)[np.newaxis, :]
-            except (ValueError, TypeError):
-                pass
 
         return az.from_dict(posterior=posterior_dict)
 

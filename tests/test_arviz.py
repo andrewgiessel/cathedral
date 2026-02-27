@@ -5,13 +5,13 @@ import pytest
 
 from cathedral import model
 from cathedral.distributions import Normal
-from cathedral.model import Posterior, infer
+from cathedral.model import infer
 from cathedral.primitives import condition, flip, sample
 
 
 class TestToArviz:
     def test_basic_conversion(self):
-        arviz = pytest.importorskip("arviz")
+        pytest.importorskip("arviz")
 
         @model
         def coin():
@@ -50,7 +50,7 @@ class TestToArviz:
         idata = p.to_arviz()
         values = idata.posterior["z"].values.flatten()
         assert len(values) == 50
-        assert all(isinstance(v, (float, np.floating)) for v in values)
+        assert all(isinstance(v, float | np.floating) for v in values)
 
     def test_boolean_converted_to_float(self):
         pytest.importorskip("arviz")

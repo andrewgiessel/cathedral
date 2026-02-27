@@ -161,13 +161,13 @@ def structure_summary(posterior: Posterior) -> str:
         lines.append(f"  Variable ({len(sometimes_present)}):")
         for addr in sorted(sometimes_present):
             count = sum(1 for s in address_sets if addr in s)
-            lines.append(f"    - {addr}  ({count}/{n} traces, {count/n:.1%})")
+            lines.append(f"    - {addr}  ({count}/{n} traces, {count / n:.1%})")
 
     if len(unique_structures) > 1:
-        lines.append(f"  Structure distribution:")
+        lines.append("  Structure distribution:")
         for struct, count in unique_structures.most_common(10):
             addrs = sorted(struct)
-            lines.append(f"    {count}/{n} ({count/n:.1%}): {{{', '.join(addrs)}}}")
+            lines.append(f"    {count}/{n} ({count / n:.1%}): {{{', '.join(addrs)}}}")
         if len(unique_structures) > 10:
             lines.append(f"    ... and {len(unique_structures) - 10} more")
 
@@ -320,8 +320,7 @@ def _render_dot_scope(
     choices = scope_children.get(scope_path, [])
 
     child_scopes = [
-        sp for sp in scope_children
-        if len(sp) == len(scope_path) + 1 and sp[:len(scope_path)] == scope_path
+        sp for sp in scope_children if len(sp) == len(scope_path) + 1 and sp[: len(scope_path)] == scope_path
     ]
 
     if scope_path:
@@ -352,7 +351,9 @@ def _render_dot_scope(
 
 def _dot_node_id(address: str) -> str:
     """Convert a choice address to a valid DOT node ID."""
-    return "n_" + address.replace(" ", "_").replace(".", "_").replace("-", "_").replace("/", "_").replace("[", "_").replace("]", "_")
+    return "n_" + address.replace(" ", "_").replace(".", "_").replace("-", "_").replace("/", "_").replace(
+        "[", "_"
+    ).replace("]", "_")
 
 
 def _dot_escape(s: str) -> str:

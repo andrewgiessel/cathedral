@@ -11,7 +11,7 @@ from cathedral.checks import (
     prior_predictive,
 )
 from cathedral.distributions import Normal
-from cathedral.model import InferenceInfo, Posterior, infer
+from cathedral.model import Posterior, infer
 from cathedral.primitives import condition, flip, observe, sample
 
 

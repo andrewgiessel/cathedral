@@ -1,11 +1,10 @@
 """Tests for inference diagnostics: InferenceInfo, Posterior diagnostic properties."""
 
 import numpy as np
-import pytest
 
 from cathedral import model
 from cathedral.distributions import Normal
-from cathedral.model import InferenceInfo, Posterior, infer
+from cathedral.model import Posterior, infer
 from cathedral.primitives import condition, flip, observe, sample
 
 
@@ -126,6 +125,7 @@ class TestPosteriorDiagnostics:
 
     def test_acceptance_rate_none_without_info(self):
         from cathedral.trace import Trace
+
         t = Trace(result=True, choices={}, log_score=0.0)
         p = Posterior([t])
         assert p.acceptance_rate is None
@@ -145,6 +145,7 @@ class TestPosteriorDiagnostics:
 
     def test_ess_from_weights(self):
         from cathedral.trace import Trace
+
         t1 = Trace(result=1, choices={}, log_score=0.0)
         t2 = Trace(result=2, choices={}, log_score=0.0)
         weights = np.array([0.5, 0.5])
@@ -154,6 +155,7 @@ class TestPosteriorDiagnostics:
 
     def test_ess_none_unweighted(self):
         from cathedral.trace import Trace
+
         t = Trace(result=True, choices={}, log_score=0.0)
         p = Posterior([t])
         assert p.ess is None
@@ -169,6 +171,7 @@ class TestPosteriorDiagnostics:
 
     def test_log_marginal_likelihood_none(self):
         from cathedral.trace import Trace
+
         t = Trace(result=True, choices={}, log_score=0.0)
         p = Posterior([t])
         assert p.log_marginal_likelihood is None

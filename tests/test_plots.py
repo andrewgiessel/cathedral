@@ -1,9 +1,9 @@
 """Tests for cathedral.plots: matplotlib-based diagnostic plots."""
 
-import matplotlib
 import numpy as np
 import pytest
 
+matplotlib = pytest.importorskip("matplotlib")
 matplotlib.use("Agg")
 from matplotlib.figure import Figure
 

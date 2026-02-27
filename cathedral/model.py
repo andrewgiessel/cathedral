@@ -48,8 +48,7 @@ def model(fn: Callable) -> Callable:
     def wrapper(*args, **kwargs):
         return fn(*args, **kwargs)
 
-    wrapper._is_cathedral_model = True
-    wrapper._original_fn = fn
+    wrapper._original_fn = fn  # type: ignore[attr-defined]
     return wrapper
 
 

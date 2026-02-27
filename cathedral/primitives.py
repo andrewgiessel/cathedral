@@ -156,7 +156,7 @@ def mem(fn: Callable, *, name: str | None = None) -> Callable:
     """
     standalone_cache: dict = {}
     func_id = id(fn)
-    scope_name = f"mem({name or fn.__name__})"
+    scope_name = f"mem({name or getattr(fn, '__name__', '<lambda>')})"
 
     @functools.wraps(fn)
     def memoized(*args):
@@ -178,8 +178,7 @@ def mem(fn: Callable, *, name: str | None = None) -> Callable:
                     ctx.pop_scope()
         return cache[key]
 
-    memoized._is_memoized = True
-    memoized._original_fn = fn
+    memoized._original_fn = fn  # type: ignore[attr-defined]
     return memoized
 
 
@@ -203,7 +202,7 @@ def DPmem(alpha: float, fn: Callable, *, name: str | None = None) -> Callable:
     """
     func_id = id(fn)
     standalone_cache: dict = {}
-    scope_name = f"DPmem({name or fn.__name__})"
+    scope_name = f"DPmem({name or getattr(fn, '__name__', '<lambda>')})"
 
     def dp_memoized(*args):
         ctx = get_trace_context()
@@ -241,7 +240,5 @@ def DPmem(alpha: float, fn: Callable, *, name: str | None = None) -> Callable:
 
         return result
 
-    dp_memoized._is_dp_memoized = True
-    dp_memoized._alpha = alpha
-    dp_memoized._original_fn = fn
+    dp_memoized._original_fn = fn  # type: ignore[attr-defined]
     return dp_memoized

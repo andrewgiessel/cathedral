@@ -9,6 +9,7 @@ to pass trace objects explicitly.
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
@@ -194,7 +195,7 @@ def get_trace_context() -> TraceContext | None:
 
 
 def run_with_trace(
-    fn: callable,
+    fn: Callable[..., Any],
     args: tuple = (),
     kwargs: dict | None = None,
     interventions: dict[str, Any] | None = None,

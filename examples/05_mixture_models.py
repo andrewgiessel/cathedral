@@ -29,6 +29,7 @@ print("=" * 60)
 print("1. Two-component Gaussian mixture (known assignment)")
 print("=" * 60)
 
+
 @model
 def known_mixture(data):
     """Two-component Gaussian mixture with equal mixing weights."""

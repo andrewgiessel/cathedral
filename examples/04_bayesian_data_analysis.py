@@ -52,6 +52,7 @@ print("\n" + "=" * 60)
 print("2. Estimating Gaussian parameters from data")
 print("=" * 60)
 
+
 @model
 def estimate_gaussian(data):
     """Estimate the mean and variance of a Gaussian from data."""
@@ -74,6 +75,7 @@ print(f"E[sigma] = {posterior.mean('sigma'):.3f}")
 print("\n" + "=" * 60)
 print("3. Model comparison: one vs two groups")
 print("=" * 60)
+
 
 @model
 def one_vs_two_groups(group_a, group_b):
@@ -101,7 +103,8 @@ posterior = infer(
     one_vs_two_groups,
     [2.1, 2.3, 1.9, 2.0, 2.2],
     [4.8, 5.1, 4.9, 5.0, 5.2],
-    method="importance", num_samples=2000,
+    method="importance",
+    num_samples=2000,
 )
 print(f"P(two groups) = {posterior.probability():.3f}")
 
@@ -112,6 +115,7 @@ print(f"P(two groups) = {posterior.probability():.3f}")
 print("\n" + "=" * 60)
 print("4. Bayesian linear regression")
 print("=" * 60)
+
 
 @model
 def bayesian_regression(xs, ys):

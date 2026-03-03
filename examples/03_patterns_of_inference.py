@@ -32,6 +32,7 @@ print("=" * 60)
 print("1. Bayesian updating: coin bias with increasing evidence")
 print("=" * 60)
 
+
 @model
 def learn_bias(observations):
     """Infer coin bias from a sequence of boolean observations."""

@@ -10,7 +10,6 @@ WebPPL (v2): https://probmods.org/chapters/generative-models.html
 from cathedral import (
     Normal,
     UniformDraw,
-    condition,
     flip,
     infer,
     mem,
@@ -162,7 +161,7 @@ print("=" * 60)
 
 @model
 def medical_diagnosis():
-    """Classic causal Bayes net: cold -> cough/fever, lung disease -> cough."""
+    """Pure generative causal Bayes net: diseases cause symptoms."""
     has_cold = flip(0.2)
     has_lung_disease = flip(0.001)
 
@@ -170,14 +169,25 @@ def medical_diagnosis():
     fever = (has_cold and flip(0.3)) or flip(0.01)
     chest_pain = (has_lung_disease and flip(0.5)) or flip(0.01)
 
-    condition(cough)
+    return {
+        "cold": has_cold,
+        "lung_disease": has_lung_disease,
+        "cough": cough,
+        "fever": fever,
+        "chest_pain": chest_pain,
+    }
 
-    return {"cold": has_cold, "lung_disease": has_lung_disease}
 
-
-posterior = infer(medical_diagnosis, num_samples=5000)
+# One model, many diagnostic queries
+posterior = infer(medical_diagnosis, num_samples=5000, condition=lambda r: r["cough"])
 print(f"P(cold | cough) = {posterior.probability('cold'):.3f}")
 print(f"P(lung disease | cough) = {posterior.probability('lung_disease'):.4f}")
+
+posterior = infer(medical_diagnosis, num_samples=5000, condition=lambda r: r["cough"] and r["fever"])
+print(f"P(cold | cough, fever) = {posterior.probability('cold'):.3f}")
+
+posterior = infer(medical_diagnosis, num_samples=5000, condition=lambda r: r["cough"] and r["chest_pain"])
+print(f"P(lung disease | cough, chest pain) = {posterior.probability('lung_disease'):.4f}")
 
 # ---------------------------------------------------------------------------
 # 7. Tug of war (with mem for persistent strength)
@@ -190,7 +200,7 @@ print("=" * 60)
 
 @model
 def tug_of_war():
-    """Each person has a persistent strength; laziness varies per match."""
+    """Pure generative model: persistent strength, per-match laziness."""
     strength = mem(lambda person: sample(Normal(0, 1)))
     lazy = lambda person: flip(0.25)
 
@@ -200,15 +210,22 @@ def tug_of_war():
     def total_pulling(team):
         return sum(pulling(p) for p in team)
 
-    def winner(team1, team2):
-        return "team1" if total_pulling(team1) > total_pulling(team2) else "team2"
+    def beat(team1, team2):
+        return total_pulling(team1) > total_pulling(team2)
 
-    condition(winner(["alice", "sue"], ["bob", "tom"]) == "team1")
+    return {
+        "alice_sue_beat_bob_tom": beat(["alice", "sue"], ["bob", "tom"]),
+        "alice_stronger_than_bob": strength("alice") > strength("bob"),
+    }
 
-    return {"alice_stronger_than_bob": strength("alice") > strength("bob")}
 
-
-posterior = infer(tug_of_war, method="rejection", num_samples=1000)
+# Condition on match outcome, ask about relative strength
+posterior = infer(
+    tug_of_war,
+    method="rejection",
+    num_samples=1000,
+    condition=lambda r: r["alice_sue_beat_bob_tom"],
+)
 print(f"P(Alice stronger than Bob | Alice's team wins) = {posterior.probability('alice_stronger_than_bob'):.3f}")
 
 # ---------------------------------------------------------------------------

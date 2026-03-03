@@ -67,6 +67,7 @@ print(f"P(fair | HHH) = {posterior.probability():.3f}")
 
 # ---------------------------------------------------------------------------
 # 3. Causal vs diagnostic reasoning
+#    One generative model, multiple queries via condition= (Church-style).
 # ---------------------------------------------------------------------------
 
 print("\n" + "=" * 60)
@@ -75,68 +76,35 @@ print("=" * 60)
 
 
 @model
-def causal_reasoning():
-    """Given it's raining, does the lawn get wet?"""
+def lawn():
+    """Pure generative model: rain, sprinkler, and wet lawn."""
     rain = flip(0.3)
     sprinkler = flip(0.5)
     wet = rain or sprinkler
-    condition(rain)
-    return wet
+    return {"rain": rain, "sprinkler": sprinkler, "wet": wet}
 
 
-posterior = infer(causal_reasoning, num_samples=1000)
-print(f"P(wet lawn | rain) = {posterior.probability():.3f}")
+# Same model, different questions — no rewrite needed
+posterior = infer(lawn, num_samples=1000, condition=lambda r: r["rain"])
+print(f"P(wet lawn | rain) = {posterior.probability('wet'):.3f}")
 
-
-@model
-def diagnostic_reasoning():
-    """Given the lawn is wet, is it raining?"""
-    rain = flip(0.3)
-    sprinkler = flip(0.5)
-    wet = rain or sprinkler
-    condition(wet)
-    return rain
-
-
-posterior = infer(diagnostic_reasoning, num_samples=2000)
-print(f"P(rain | wet lawn) = {posterior.probability():.3f}")
+posterior = infer(lawn, num_samples=2000, condition=lambda r: r["wet"])
+print(f"P(rain | wet lawn) = {posterior.probability('rain'):.3f}")
 
 # ---------------------------------------------------------------------------
 # 4. Explaining away
+#    Same lawn model, increasingly specific conditions.
 # ---------------------------------------------------------------------------
 
 print("\n" + "=" * 60)
 print("4. Explaining away")
 print("=" * 60)
 
+posterior = infer(lawn, num_samples=2000, condition=lambda r: r["wet"])
+print(f"P(rain | wet) = {posterior.probability('rain'):.3f}")
 
-@model
-def explaining_away_no_sprinkler():
-    """P(rain | wet lawn)?"""
-    rain = flip(0.3)
-    sprinkler = flip(0.5)
-    wet = rain or sprinkler
-    condition(wet)
-    return rain
-
-
-posterior = infer(explaining_away_no_sprinkler, num_samples=2000)
-print(f"P(rain | wet) = {posterior.probability():.3f}")
-
-
-@model
-def explaining_away_with_sprinkler():
-    """P(rain | wet lawn, sprinkler on)? Should be lower (explained away)."""
-    rain = flip(0.3)
-    sprinkler = flip(0.5)
-    wet = rain or sprinkler
-    condition(wet)
-    condition(sprinkler)
-    return rain
-
-
-posterior = infer(explaining_away_with_sprinkler, num_samples=2000)
-print(f"P(rain | wet, sprinkler on) = {posterior.probability():.3f}")
+posterior = infer(lawn, num_samples=2000, condition=lambda r: r["wet"] and r["sprinkler"])
+print(f"P(rain | wet, sprinkler on) = {posterior.probability('rain'):.3f}")
 
 # ---------------------------------------------------------------------------
 # 5. Learning a continuous parameter with observe
@@ -148,16 +116,15 @@ print("=" * 60)
 
 
 @model
-def learn_mean():
+def learn_mean(data):
     """Infer the mean of a Gaussian from observed data."""
     mu = sample(Normal(0, 5), name="mu")
-    data = [2.1, 1.8, 2.3, 1.9, 2.0]
     for x in data:
         observe(Normal(mu, 0.5), x)
     return mu
 
 
-posterior = infer(learn_mean, method="importance", num_samples=2000)
+posterior = infer(learn_mean, [2.1, 1.8, 2.3, 1.9, 2.0], method="importance", num_samples=2000)
 print(f"Posterior mean of mu: {posterior.mean():.3f}")
 print(f"Posterior std of mu: {posterior.std():.3f}")
 print(f"95% credible interval: {posterior.credible_interval(0.95)}")

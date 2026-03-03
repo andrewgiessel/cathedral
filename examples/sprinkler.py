@@ -1,15 +1,16 @@
 """Sprinkler example from Goodman et al. 2008.
 
 Classic Bayesian reasoning: given that the grass is wet, did it rain
-or was the sprinkler on?  Demonstrates all four inference methods
-and shows that enumeration gives the exact answer.
+or was the sprinkler on?  Demonstrates Church-style query separation --
+one generative model supports many different questions via condition=.
 """
 
-from cathedral import condition, flip, infer, model
+from cathedral import flip, infer, model
 
 
 @model
 def sprinkler():
+    """Pure generative model for rain/sprinkler/wet-grass."""
     rain = flip(0.3)
     sprinkler_on = flip(0.5)
 
@@ -20,31 +21,43 @@ def sprinkler():
     else:
         wet = flip(0.1)
 
-    condition(wet)
-    return {"rain": rain, "sprinkler": sprinkler_on}
+    return {"rain": rain, "sprinkler": sprinkler_on, "wet": wet}
 
 
 if __name__ == "__main__":
+    wet = lambda r: r["wet"]
+
     # Exact answer via enumeration
     print("=== Exact enumeration ===")
-    exact = infer(sprinkler, method="enumerate")
+    exact = infer(sprinkler, method="enumerate", condition=wet)
     print(f"P(rain | wet)      = {exact.probability('rain'):.6f}")
     print(f"P(sprinkler | wet) = {exact.probability('sprinkler'):.6f}")
 
     # Rejection sampling
     print("\n=== Rejection sampling (10,000 samples) ===")
-    rej = infer(sprinkler, method="rejection", num_samples=10000)
+    rej = infer(sprinkler, method="rejection", num_samples=10000, condition=wet)
     print(f"P(rain | wet)      = {rej.probability('rain'):.4f}")
     print(f"P(sprinkler | wet) = {rej.probability('sprinkler'):.4f}")
 
     # Single-site MH
     print("\n=== Single-site MH (10,000 samples, 2,000 burn-in) ===")
-    mh = infer(sprinkler, method="mh", num_samples=10000, burn_in=2000)
+    mh = infer(sprinkler, method="mh", num_samples=10000, burn_in=2000, condition=wet)
     print(f"P(rain | wet)      = {mh.probability('rain'):.4f}")
     print(f"P(sprinkler | wet) = {mh.probability('sprinkler'):.4f}")
 
+    # Same model, different questions
+    print("\n=== Different queries on the same model (exact) ===")
+    p = infer(sprinkler, method="enumerate", condition=lambda r: r["rain"])
+    print(f"P(wet | rain)      = {p.probability('wet'):.6f}")
+
+    p = infer(sprinkler, method="enumerate", condition=lambda r: r["wet"] and r["sprinkler"])
+    print(f"P(rain | wet, sprinkler) = {p.probability('rain'):.6f}")
+
+    p = infer(sprinkler, method="enumerate", condition=lambda r: r["wet"] and not r["sprinkler"])
+    print(f"P(rain | wet, no sprinkler) = {p.probability('rain'):.6f}")
+
     # Joint distribution from enumeration
-    print("\n=== Full joint posterior (exact) ===")
+    print("\n=== Full joint posterior (exact, conditioned on wet) ===")
     for outcome, prob in exact.histogram().items():
         rain_str = "rain" if outcome["rain"] else "no rain"
         spr_str = "sprinkler" if outcome["sprinkler"] else "no sprinkler"

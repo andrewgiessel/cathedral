@@ -375,6 +375,162 @@ class TestMHSampling:
         assert 0.20 < posterior.probability() < 0.55
 
 
+class TestConditionParameter:
+    """Tests for the condition= keyword on infer()."""
+
+    def test_rejection_with_condition(self):
+        """External condition should filter results in rejection sampling."""
+        np.random.seed(42)
+
+        @model
+        def coin():
+            return flip(0.5)
+
+        from cathedral.model import infer
+
+        posterior = infer(coin, method="rejection", num_samples=100, condition=lambda x: x)
+        assert all(r is True for r in posterior.samples)
+
+    def test_condition_on_dict_return(self):
+        """External condition should work with dict-returning models."""
+        np.random.seed(42)
+
+        @model
+        def lawn():
+            rain = flip(0.3)
+            sprinkler = flip(0.5)
+            wet = rain or sprinkler
+            return {"rain": rain, "sprinkler": sprinkler, "wet": wet}
+
+        from cathedral.model import infer
+
+        posterior = infer(lawn, num_samples=2000, condition=lambda r: r["wet"])
+        assert all(r["wet"] for r in posterior.samples)
+        rain_prob = posterior.probability("rain")
+        assert 0.25 < rain_prob < 0.65
+
+    def test_same_model_different_conditions(self):
+        """The same model should support multiple different conditions."""
+        np.random.seed(42)
+
+        @model
+        def lawn():
+            rain = flip(0.3)
+            sprinkler = flip(0.5)
+            wet = rain or sprinkler
+            return {"rain": rain, "sprinkler": sprinkler, "wet": wet}
+
+        from cathedral.model import infer
+
+        p1 = infer(lawn, num_samples=2000, condition=lambda r: r["wet"])
+        p2 = infer(lawn, num_samples=2000, condition=lambda r: r["wet"] and r["sprinkler"])
+
+        rain_given_wet = p1.probability("rain")
+        rain_given_wet_and_sprinkler = p2.probability("rain")
+        assert rain_given_wet_and_sprinkler < rain_given_wet + 0.1
+
+    def test_condition_with_enumerate(self):
+        """External condition should produce exact posteriors with enumeration."""
+
+        @model
+        def two_flips():
+            a = flip(0.5)
+            b = flip(0.5)
+            return {"a": a, "b": b}
+
+        from cathedral.model import infer
+
+        posterior = infer(
+            two_flips,
+            method="enumerate",
+            condition=lambda r: r["a"] or r["b"],
+        )
+        # P(a | a or b) = P(a and (a or b)) / P(a or b)
+        # = P(a) / P(a or b) = 0.5 / 0.75 = 2/3
+        p_a = posterior.probability("a")
+        assert abs(p_a - 2 / 3) < 1e-10
+
+    def test_condition_with_mh(self):
+        """External condition should work with MH sampling."""
+        np.random.seed(42)
+
+        @model
+        def coin():
+            fair = flip(0.5)
+            result = flip(0.5 if fair else 0.9)
+            return {"fair": fair, "result": result}
+
+        from cathedral.model import infer
+
+        posterior = infer(
+            coin,
+            method="mh",
+            num_samples=2000,
+            burn_in=500,
+            condition=lambda r: r["result"],
+        )
+        p_fair = posterior.probability("fair")
+        assert 0.20 < p_fair < 0.55
+
+    def test_condition_with_importance(self):
+        """External condition should work with importance sampling."""
+        np.random.seed(42)
+        from cathedral.distributions import Normal
+
+        @model
+        def gaussian():
+            x = sample(Normal(0, 1), name="x")
+            return x
+
+        from cathedral.model import infer
+
+        posterior = infer(
+            gaussian,
+            method="importance",
+            num_samples=5000,
+            condition=lambda x: x > 0,
+        )
+        assert all(r > 0 for r in posterior.samples)
+
+    def test_condition_composes_with_inline(self):
+        """External condition should compose with inline condition() calls."""
+        np.random.seed(42)
+
+        @model
+        def model_with_inline():
+            a = flip(0.5)
+            b = flip(0.5)
+            condition(a or b)  # inline: at least one True
+            return {"a": a, "b": b}
+
+        from cathedral.model import infer
+
+        posterior = infer(
+            model_with_inline,
+            method="enumerate",
+            condition=lambda r: r["a"],  # external: a must be True
+        )
+        # Both conditions: a=True and (a or b) => a=True always
+        # So b is unconstrained: P(b) = 0.5
+        p_b = posterior.probability("b")
+        assert abs(p_b - 0.5) < 1e-10
+
+    def test_condition_none_is_noop(self):
+        """condition=None should behave identically to no condition."""
+        np.random.seed(42)
+
+        @model
+        def coin():
+            return flip(0.7)
+
+        from cathedral.model import infer
+
+        p1 = infer(coin, num_samples=5000)
+        np.random.seed(42)
+        p2 = infer(coin, num_samples=5000, condition=None)
+        assert abs(p1.probability() - p2.probability()) < 0.05
+
+
 class TestEnumeration:
     def test_single_flip(self):
         """Enumerating a single flip should produce exactly 2 traces."""

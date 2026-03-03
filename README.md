@@ -13,7 +13,7 @@ Cathedral fills a gap in the Python ecosystem: **Church/WebPPL-level expressiven
 ## Quick Start
 
 ```python
-from cathedral import model, infer, flip, condition
+from cathedral import model, infer, flip
 
 @model
 def sprinkler():
@@ -25,15 +25,17 @@ def sprinkler():
         wet = flip(0.8)
     else:
         wet = flip(0.1)
-    condition(wet)
-    return {"rain": rain, "sprinkler": sprinkler_on}
+    return {"rain": rain, "sprinkler": sprinkler_on, "wet": wet}
 
-posterior = infer(sprinkler, method="enumerate")
+# One model, many queries — pass the condition externally (Church-style)
+posterior = infer(sprinkler, method="enumerate", condition=lambda r: r["wet"])
 print(f"P(rain | wet grass) = {posterior.probability('rain'):.4f}")
 # P(rain | wet grass) = 0.4615
 
-print(f"P(sprinkler | wet grass) = {posterior.probability('sprinkler'):.4f}")
-# P(sprinkler | wet grass) = 0.7094
+posterior = infer(sprinkler, method="enumerate",
+                 condition=lambda r: r["wet"] and r["sprinkler"])
+print(f"P(rain | wet, sprinkler on) = {posterior.probability('rain'):.4f}")
+# P(rain | wet, sprinkler on) = 0.3253  (explaining away!)
 ```
 
 ## Installation

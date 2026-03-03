@@ -358,9 +358,28 @@ def infer(
     method: str = "rejection",
     num_samples: int = 1000,
     capture_scopes: bool = False,
+    condition: Callable[[Any], bool] | None = None,
     **kwargs: Any,
 ) -> Posterior:
     """Run probabilistic inference on a model.
+
+    Supports Church-style separation of model and query: write a pure
+    generative model and pass the condition externally via ``condition``.
+    This lets you ask many different questions of the same model without
+    rewriting it::
+
+        @model
+        def lawn():
+            rain = flip(0.3)
+            sprinkler = flip(0.5)
+            wet = rain or sprinkler
+            return {"rain": rain, "sprinkler": sprinkler, "wet": wet}
+
+        infer(lawn, condition=lambda r: r["wet"])            # P(rain | wet)
+        infer(lawn, condition=lambda r: r["wet"] and not r["sprinkler"])
+
+    The ``condition`` predicate composes with any ``condition()`` calls
+    already inside the model — both must be satisfied.
 
     Args:
         model_fn: A function decorated with @model (or any callable).
@@ -373,6 +392,10 @@ def infer(
         num_samples: Number of posterior samples to collect.
         capture_scopes: If True, record scope paths on each choice via
             Python stack introspection. Useful for trace visualization.
+        condition: Optional predicate applied to the model's return value.
+            Executions where ``condition(result)`` is False are rejected,
+            equivalent to calling ``condition(predicate(result))`` at the
+            end of the model body. Enables Church-style query separation.
         **kwargs: Additional keyword arguments passed to the inference engine.
 
     Returns:
@@ -380,11 +403,27 @@ def infer(
     """
     fn = getattr(model_fn, "_original_fn", model_fn)
 
+    if condition is not None:
+        fn = _wrap_with_condition(fn, condition)
+
     token = _CAPTURE_SCOPES.set(capture_scopes)
     try:
         return _run_inference(fn, args, method, num_samples, **kwargs)
     finally:
         _CAPTURE_SCOPES.reset(token)
+
+
+def _wrap_with_condition(fn: Callable, predicate: Callable[[Any], bool]) -> Callable:
+    """Wrap a model function so its return value is conditioned on a predicate."""
+    from cathedral.primitives import condition as _condition
+
+    @functools.wraps(fn)
+    def conditioned(*args, **kwargs):
+        result = fn(*args, **kwargs)
+        _condition(predicate(result))
+        return result
+
+    return conditioned
 
 
 def _run_inference(

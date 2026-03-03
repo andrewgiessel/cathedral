@@ -29,14 +29,16 @@ print("=" * 60)
 
 
 @model
-def coin_bias_estimation():
+def coin_bias_estimation(observations):
+    """Estimate a coin's bias from observed flips."""
     p = sample(Beta(1, 1), name="p")
-    for outcome in [True, True, True, True, True, True, True, False, False, False]:
+    for outcome in observations:
         observe(Bernoulli(p), outcome)
     return p
 
 
-posterior = infer(coin_bias_estimation, method="importance", num_samples=2000)
+data = [True, True, True, True, True, True, True, False, False, False]
+posterior = infer(coin_bias_estimation, data, method="importance", num_samples=2000)
 print(f"Posterior E[p] = {posterior.mean():.3f} (expected ~0.7)")
 print(f"Posterior std[p] = {posterior.std():.3f}")
 ci = posterior.credible_interval(0.95)
@@ -50,11 +52,9 @@ print("\n" + "=" * 60)
 print("2. Estimating Gaussian parameters from data")
 print("=" * 60)
 
-data = [4.2, 3.8, 5.1, 4.6, 3.9, 4.4, 5.0, 4.7, 4.1, 4.3]
-
-
 @model
-def estimate_gaussian():
+def estimate_gaussian(data):
+    """Estimate the mean and variance of a Gaussian from data."""
     mu = sample(Normal(0, 10), name="mu")
     sigma = sample(HalfNormal(5), name="sigma")
     for x in data:
@@ -62,7 +62,8 @@ def estimate_gaussian():
     return {"mu": mu, "sigma": sigma}
 
 
-posterior = infer(estimate_gaussian, method="importance", num_samples=2000)
+data = [4.2, 3.8, 5.1, 4.6, 3.9, 4.4, 5.0, 4.7, 4.1, 4.3]
+posterior = infer(estimate_gaussian, data, method="importance", num_samples=2000)
 print(f"E[mu] = {posterior.mean('mu'):.3f} (true ≈ 4.41)")
 print(f"E[sigma] = {posterior.mean('sigma'):.3f}")
 
@@ -74,12 +75,9 @@ print("\n" + "=" * 60)
 print("3. Model comparison: one vs two groups")
 print("=" * 60)
 
-group_a = [2.1, 2.3, 1.9, 2.0, 2.2]
-group_b = [4.8, 5.1, 4.9, 5.0, 5.2]
-
-
 @model
-def one_vs_two_groups():
+def one_vs_two_groups(group_a, group_b):
+    """Model comparison: are two groups drawn from one distribution or two?"""
     two_groups = flip(0.5)
 
     if two_groups:
@@ -98,7 +96,13 @@ def one_vs_two_groups():
     return two_groups
 
 
-posterior = infer(one_vs_two_groups, method="importance", num_samples=2000)
+# Clearly separated groups
+posterior = infer(
+    one_vs_two_groups,
+    [2.1, 2.3, 1.9, 2.0, 2.2],
+    [4.8, 5.1, 4.9, 5.0, 5.2],
+    method="importance", num_samples=2000,
+)
 print(f"P(two groups) = {posterior.probability():.3f}")
 
 # ---------------------------------------------------------------------------
@@ -109,12 +113,9 @@ print("\n" + "=" * 60)
 print("4. Bayesian linear regression")
 print("=" * 60)
 
-xs = [1, 2, 3, 4, 5, 6, 7, 8]
-ys = [2.1, 4.3, 5.8, 8.2, 9.9, 12.1, 14.0, 16.1]  # y ≈ 2x + 0
-
-
 @model
-def bayesian_regression():
+def bayesian_regression(xs, ys):
+    """Bayesian linear regression: infer slope, intercept, and noise from data."""
     slope = sample(Normal(0, 5), name="slope")
     intercept = sample(Normal(0, 5), name="intercept")
     noise = sample(HalfNormal(2), name="noise")
@@ -125,7 +126,9 @@ def bayesian_regression():
     return {"slope": slope, "intercept": intercept, "noise": noise}
 
 
-posterior = infer(bayesian_regression, method="importance", num_samples=2000)
+xs = [1, 2, 3, 4, 5, 6, 7, 8]
+ys = [2.1, 4.3, 5.8, 8.2, 9.9, 12.1, 14.0, 16.1]  # y ≈ 2x + 0
+posterior = infer(bayesian_regression, xs, ys, method="importance", num_samples=2000)
 print(f"Slope: {posterior.mean('slope'):.3f} (true ≈ 2.0)")
 print(f"Intercept: {posterior.mean('intercept'):.3f} (true ≈ 0.0)")
 print(f"Noise: {posterior.mean('noise'):.3f}")
@@ -140,12 +143,11 @@ print("=" * 60)
 
 
 @model
-def posterior_predictive():
+def posterior_predictive(observed):
     """Learn the mean from data, then predict a new observation."""
     mu = sample(Normal(0, 10), name="mu")
     sigma = sample(HalfNormal(5), name="sigma")
 
-    observed = [10.1, 9.8, 10.3, 9.9, 10.0]
     for x in observed:
         observe(Normal(mu, sigma), x)
 
@@ -153,7 +155,7 @@ def posterior_predictive():
     return new_obs
 
 
-posterior = infer(posterior_predictive, method="importance", num_samples=2000)
+posterior = infer(posterior_predictive, [10.1, 9.8, 10.3, 9.9, 10.0], method="importance", num_samples=2000)
 print(f"Predicted new observation: {posterior.mean():.3f}")
 print(f"Prediction uncertainty (std): {posterior.std():.3f}")
 ci = posterior.credible_interval(0.95)

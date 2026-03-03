@@ -18,6 +18,7 @@ from cathedral import (
 
 # ---------------------------------------------------------------------------
 # 1. Goal inference: what does the agent want?
+#    One generative model, queried with different observed actions.
 # ---------------------------------------------------------------------------
 
 print("=" * 60)
@@ -26,25 +27,27 @@ print("=" * 60)
 
 
 @model
-def goal_inference():
-    """An agent chose action A. What was their goal?
-    Actions: go-left leads to cookie, go-right leads to apple.
-    Agent is rational: they go toward what they want."""
+def agent_model():
+    """Generative model of a rational agent choosing an action.
+    Actions: go-left leads to cookie, go-right leads to apple."""
     goal = sample(UniformDraw(["cookie", "apple"]))
 
-    # Rational agent picks the action leading to their goal
     if goal == "cookie":
         action = "go-left" if flip(0.9) else "go-right"
     else:
         action = "go-right" if flip(0.9) else "go-left"
 
-    condition(action == "go-left")
-    return goal
+    return {"goal": goal, "action": action}
 
 
-posterior = infer(goal_inference, num_samples=2000)
-print(f"P(wants cookie | went left) = {posterior.probability(lambda x: x == 'cookie'):.3f}")
-print(f"P(wants apple | went left) = {posterior.probability(lambda x: x == 'apple'):.3f}")
+# Same model, different observed actions
+posterior = infer(agent_model, num_samples=2000, condition=lambda r: r["action"] == "go-left")
+print(f"P(wants cookie | went left) = {posterior.probability(lambda r: r['goal'] == 'cookie'):.3f}")
+print(f"P(wants apple | went left) = {posterior.probability(lambda r: r['goal'] == 'apple'):.3f}")
+
+posterior = infer(agent_model, num_samples=2000, condition=lambda r: r["action"] == "go-right")
+print(f"P(wants cookie | went right) = {posterior.probability(lambda r: r['goal'] == 'cookie'):.3f}")
+print(f"P(wants apple | went right) = {posterior.probability(lambda r: r['goal'] == 'apple'):.3f}")
 
 # ---------------------------------------------------------------------------
 # 2. Preference inference from choices

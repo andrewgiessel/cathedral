@@ -1,11 +1,11 @@
 [project]
 name = "cathedral"
-version = "0.1.0"
+version = "0.2.0"
 description = "A Pythonic probabilistic programming library inspired by Church and WebPPL"
 authors = [{ name = "Andrew Giessel" }]
 readme = "README.md"
 keywords = ['python']
-license = { text = "MIT" }
+license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.24.4",
@@ -128,7 +128,7 @@ whitelist-regex = []
 color = true
 
 [tool.bumpversion]
-current_version = "0.0.3"
+current_version = "0.2.0"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 search = "{current_version}"

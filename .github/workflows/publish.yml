@@ -1,14 +1,17 @@
 name: Publish to PyPI
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
+      contents: read
       id-token: write
 
     steps:
@@ -16,6 +19,22 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
+
+      - name: Verify tag matches package version
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import os
+          import tomllib
+
+          ref_name = os.environ["GITHUB_REF_NAME"]
+          expected_tag = f"v{tomllib.loads(Path('pyproject.toml').read_text()).get('project', {}).get('version')}"
+
+          if ref_name != expected_tag:
+              raise SystemExit(
+                  f"Git tag {ref_name!r} does not match pyproject.toml version tag {expected_tag!r}"
+              )
+          PY
 
       - name: Build
         run: uv build

@@ -16,6 +16,7 @@ from typing import Any
 
 import numpy as np
 
+from cathedral._rng import SeedLike, make_rng
 from cathedral.trace import Rejected, Trace, run_with_trace
 
 
@@ -25,6 +26,7 @@ def importance_sample(
     kwargs: dict[str, Any] | None = None,
     num_samples: int = 1000,
     resample: bool = True,
+    seed: SeedLike = None,
     _info: dict | None = None,
 ) -> list[Trace]:
     """Run likelihood-weighted importance sampling on a model.
@@ -40,6 +42,7 @@ def importance_sample(
         num_samples: Number of samples to draw from the prior.
         resample: If True, resample proportional to weights to produce
             an unweighted sample set of the same size.
+        seed: Optional seed for reproducible sampling and resampling.
         _info: If provided, populated with diagnostic metadata.
 
     Returns:
@@ -47,14 +50,14 @@ def importance_sample(
     """
     if kwargs is None:
         kwargs = {}
-
+    rng = make_rng(seed)
     traces: list[Trace] = []
     log_weights: list[float] = []
     num_rejected = 0
 
     for _ in range(num_samples):
         try:
-            trace = run_with_trace(model_fn, args=args, kwargs=kwargs)
+            trace = run_with_trace(model_fn, args=args, kwargs=kwargs, rng=rng)
             traces.append(trace)
             log_weights.append(trace.log_score)
         except Rejected:
@@ -94,5 +97,5 @@ def importance_sample(
     weights = np.exp(log_weights_arr - max_log_w)
     weights /= weights.sum()
 
-    indices = np.random.choice(len(traces), size=len(traces), replace=True, p=weights)
+    indices = rng.choice(len(traces), size=len(traces), replace=True, p=weights)
     return [traces[i] for i in indices]

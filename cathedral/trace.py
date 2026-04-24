@@ -14,6 +14,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
+from cathedral._rng import Generator, get_active_rng, using_rng
 from cathedral.distributions import Distribution
 
 _TRACE: ContextVar[TraceContext | None] = ContextVar("cathedral_trace", default=None)
@@ -201,6 +202,7 @@ def run_with_trace(
     interventions: dict[str, Any] | None = None,
     enumerate_mode: bool = False,
     capture_scopes: bool | None = None,
+    rng: Generator | None = None,
 ) -> Trace:
     """Execute a function within a fresh tracing context and return the trace.
 
@@ -214,6 +216,9 @@ def run_with_trace(
         capture_scopes: If True, record scope paths on each choice via
             Python stack introspection. If None, uses the value set by
             infer(capture_scopes=...) or defaults to False.
+        rng: Optional RNG to use for stochastic draws during this execution.
+            If omitted, uses the currently active Cathedral RNG or a
+            process-local default generator.
 
     Returns:
         The completed Trace.
@@ -232,9 +237,11 @@ def run_with_trace(
         capture_scopes=should_capture,
     )
     token = _TRACE.set(ctx)
+    active_rng = rng if rng is not None else get_active_rng()
     try:
-        result = fn(*args, **kwargs)
-        ctx.trace.result = result
-        return ctx.trace
+        with using_rng(active_rng):
+            result = fn(*args, **kwargs)
+            ctx.trace.result = result
+            return ctx.trace
     finally:
         _TRACE.reset(token)

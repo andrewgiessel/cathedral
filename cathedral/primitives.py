@@ -14,8 +14,14 @@ from typing import Any
 
 import numpy as np
 
+from cathedral._rng import get_active_rng
 from cathedral.distributions import Bernoulli, Distribution
 from cathedral.trace import NeedsEnumeration, Rejected, get_trace_context
+
+
+def _set_original_fn(wrapper: Any, fn: Callable) -> None:
+    """Attach the original callable without triggering static attribute checks."""
+    wrapper.__dict__["_original_fn"] = fn
 
 
 def sample(dist: Distribution, *, name: str | None = None) -> Any:
@@ -178,7 +184,7 @@ def mem(fn: Callable, *, name: str | None = None) -> Callable:
                     ctx.pop_scope()
         return cache[key]
 
-    memoized._original_fn = fn  # type: ignore[attr-defined]
+    _set_original_fn(memoized, fn)
     return memoized
 
 
@@ -220,8 +226,9 @@ def DPmem(alpha: float, fn: Callable, *, name: str | None = None) -> Callable:
 
         total_count = sum(table["counts"]) if table["counts"] else 0
         prob_new = alpha / (alpha + total_count)
+        rng = get_active_rng()
 
-        if not table["values"] or np.random.random() < prob_new:
+        if not table["values"] or rng.random() < prob_new:
             if ctx is not None:
                 ctx.push_scope(scope_name)
             try:
@@ -234,11 +241,11 @@ def DPmem(alpha: float, fn: Callable, *, name: str | None = None) -> Callable:
         else:
             probs = np.array(table["counts"], dtype=float)
             probs /= probs.sum()
-            idx = np.random.choice(len(table["values"]), p=probs)
+            idx = rng.choice(len(table["values"]), p=probs)
             result = table["values"][idx]
             table["counts"][idx] += 1
 
         return result
 
-    dp_memoized._original_fn = fn  # type: ignore[attr-defined]
+    _set_original_fn(dp_memoized, fn)
     return dp_memoized

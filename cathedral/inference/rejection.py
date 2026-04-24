@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from cathedral._rng import SeedLike, make_rng
 from cathedral.trace import Rejected, Trace, run_with_trace
 
 
@@ -21,6 +22,7 @@ def rejection_sample(
     kwargs: dict[str, Any] | None = None,
     num_samples: int = 1000,
     max_attempts: int | None = None,
+    seed: SeedLike = None,
     _info: dict | None = None,
 ) -> list[Trace]:
     """Run rejection sampling on a model.
@@ -32,6 +34,7 @@ def rejection_sample(
         num_samples: Number of accepted samples to collect.
         max_attempts: Maximum total attempts before giving up.
             Defaults to num_samples * 1000.
+        seed: Optional seed for reproducible sampling.
         _info: If provided, populated with diagnostic metadata.
 
     Returns:
@@ -44,7 +47,7 @@ def rejection_sample(
         kwargs = {}
     if max_attempts is None:
         max_attempts = num_samples * 1000
-
+    rng = make_rng(seed)
     samples: list[Trace] = []
     attempts = 0
 
@@ -57,7 +60,7 @@ def rejection_sample(
             )
         attempts += 1
         try:
-            trace = run_with_trace(model_fn, args=args, kwargs=kwargs)
+            trace = run_with_trace(model_fn, args=args, kwargs=kwargs, rng=rng)
             samples.append(trace)
         except Rejected:
             continue

@@ -8,12 +8,16 @@ import pytest
 from cathedral.distributions import (
     Bernoulli,
     Beta,
+    Binomial,
     Categorical,
     Dirichlet,
+    Exponential,
     Gamma,
     HalfNormal,
+    LogNormal,
     Normal,
     Poisson,
+    StudentT,
     Uniform,
 )
 
@@ -119,6 +123,25 @@ class TestGamma:
         assert d.log_prob(-1.0) == -math.inf
 
 
+class TestExponential:
+    def test_sample_positive(self):
+        d = Exponential(2.0)
+        for _ in range(100):
+            assert d.sample() >= 0
+
+    def test_log_prob_at_zero(self):
+        d = Exponential(2.0)
+        assert math.isclose(d.log_prob(0.0), math.log(2.0))
+
+    def test_log_prob_negative_is_neg_inf(self):
+        d = Exponential(1.0)
+        assert d.log_prob(-1.0) == -math.inf
+
+    def test_invalid_rate(self):
+        with pytest.raises(ValueError):
+            Exponential(0)
+
+
 class TestUniform:
     def test_sample_in_bounds(self):
         np.random.seed(42)
@@ -136,6 +159,22 @@ class TestUniform:
         d = Uniform(0, 1)
         assert d.log_prob(-0.1) == -math.inf
         assert d.log_prob(1.1) == -math.inf
+
+
+class TestLogNormal:
+    def test_sample_positive(self):
+        d = LogNormal(0, 1)
+        for _ in range(100):
+            assert d.sample() > 0
+
+    def test_log_prob_non_positive_is_neg_inf(self):
+        d = LogNormal(0, 1)
+        assert d.log_prob(0.0) == -math.inf
+        assert d.log_prob(-1.0) == -math.inf
+
+    def test_invalid_sigma(self):
+        with pytest.raises(ValueError):
+            LogNormal(0, 0)
 
 
 class TestCategorical:
@@ -168,6 +207,30 @@ class TestPoisson:
         assert d.log_prob(-1) == -math.inf
 
 
+class TestBinomial:
+    def test_sample_in_support(self):
+        d = Binomial(10, 0.3)
+        for _ in range(100):
+            s = d.sample()
+            assert isinstance(s, int)
+            assert 0 <= s <= 10
+
+    def test_support(self):
+        assert Binomial(3, 0.5).support() == [0, 1, 2, 3]
+
+    def test_log_prob_outside_support(self):
+        d = Binomial(3, 0.5)
+        assert d.log_prob(-1) == -math.inf
+        assert d.log_prob(4) == -math.inf
+        assert d.log_prob(1.5) == -math.inf
+
+    def test_invalid_params(self):
+        with pytest.raises(ValueError):
+            Binomial(-1, 0.5)
+        with pytest.raises(ValueError):
+            Binomial(3, -0.1)
+
+
 class TestDirichlet:
     def test_sample_sums_to_one(self):
         np.random.seed(42)
@@ -180,3 +243,19 @@ class TestDirichlet:
         d = Dirichlet([2.0, 3.0])
         s = d.sample()
         assert all(x > 0 for x in s)
+
+
+class TestStudentT:
+    def test_sample_returns_float(self):
+        d = StudentT(3)
+        assert isinstance(d.sample(), float)
+
+    def test_log_prob_at_location(self):
+        d = StudentT(3, loc=2.0, scale=1.0)
+        assert math.isfinite(d.log_prob(2.0))
+
+    def test_invalid_params(self):
+        with pytest.raises(ValueError):
+            StudentT(0)
+        with pytest.raises(ValueError):
+            StudentT(3, scale=0)

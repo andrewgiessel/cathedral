@@ -16,11 +16,17 @@ from typing import Any
 
 import numpy as np
 
+from cathedral._rng import SeedLike
 from cathedral.inference.enumeration import enumerate_executions
 from cathedral.inference.importance import importance_sample
 from cathedral.inference.mh import mh_sample
 from cathedral.inference.rejection import rejection_sample
 from cathedral.trace import _CAPTURE_SCOPES, Trace
+
+
+def _set_original_fn(wrapper: Any, fn: Callable) -> None:
+    """Attach the original callable without triggering static attribute checks."""
+    wrapper.__dict__["_original_fn"] = fn
 
 
 @dataclass
@@ -48,7 +54,7 @@ def model(fn: Callable) -> Callable:
     def wrapper(*args, **kwargs):
         return fn(*args, **kwargs)
 
-    wrapper._original_fn = fn  # type: ignore[attr-defined]
+    _set_original_fn(wrapper, fn)
     return wrapper
 
 
@@ -283,6 +289,28 @@ class Posterior:
         upper = float(np.percentile(values, 100 * (1 - alpha)))
         return (lower, upper)
 
+    def summary(self, key: str | None = None, level: float = 0.95) -> dict[str, Any]:
+        """Return common numeric posterior summaries.
+
+        Args:
+            key: If results are dicts or objects, summarize this field.
+                If None, summarize the results directly.
+            level: Credible interval level.
+
+        Returns:
+            A dictionary with sample count, mean, standard deviation,
+            credible interval, ESS, and fixed-structure status.
+        """
+        return {
+            "num_samples": self.num_samples,
+            "mean": self.mean(key),
+            "std": self.std(key),
+            "credible_interval": self.credible_interval(level, key),
+            "level": level,
+            "ess": self.ess,
+            "has_fixed_structure": self.has_fixed_structure,
+        }
+
     def _extract_values(self, key: str | None) -> list:
         """Extract numeric values from results, optionally by key."""
         if key is not None:
@@ -352,6 +380,23 @@ def _weighted_histogram(values: list, weights: np.ndarray) -> dict[Any, float]:
     return _UnhashableHistogram(hashable_hist, unhashable_items)
 
 
+def _normalize_log_weights(log_weights: np.ndarray) -> np.ndarray:
+    """Normalize log weights into probability weights."""
+    if len(log_weights) == 0:
+        raise ValueError("Cannot normalize empty log weights")
+
+    max_log_w = np.max(log_weights)
+    if np.isneginf(max_log_w):
+        raise RuntimeError(
+            "Importance sampling: all samples have -inf log-weight. "
+            "The observed data may be impossible under the prior."
+        )
+
+    weights = np.exp(log_weights - max_log_w)
+    weights /= weights.sum()
+    return weights
+
+
 def infer(
     model_fn: Callable,
     *args: Any,
@@ -359,6 +404,7 @@ def infer(
     num_samples: int = 1000,
     capture_scopes: bool = False,
     condition: Callable[[Any], bool] | None = None,
+    seed: SeedLike = None,
     **kwargs: Any,
 ) -> Posterior:
     """Run probabilistic inference on a model.
@@ -396,7 +442,12 @@ def infer(
             Executions where ``condition(result)`` is False are rejected,
             equivalent to calling ``condition(predicate(result))`` at the
             end of the model body. Enables Church-style query separation.
+        seed: Optional seed for reproducible stochastic inference.
         **kwargs: Additional keyword arguments passed to the inference engine.
+            Common options include:
+            - rejection: ``max_attempts``
+            - importance: ``resample``
+            - mh: ``burn_in``, ``lag``
 
     Returns:
         A Posterior object for analyzing the results.
@@ -408,7 +459,7 @@ def infer(
 
     token = _CAPTURE_SCOPES.set(capture_scopes)
     try:
-        return _run_inference(fn, args, method, num_samples, **kwargs)
+        return _run_inference(fn, args, method, num_samples, seed=seed, **kwargs)
     finally:
         _CAPTURE_SCOPES.reset(token)
 
@@ -431,6 +482,7 @@ def _run_inference(
     args: tuple,
     method: str,
     num_samples: int,
+    seed: SeedLike = None,
     **kwargs: Any,
 ) -> Posterior:
     engine_info: dict = {}
@@ -442,6 +494,7 @@ def _run_inference(
             args=args,
             num_samples=num_samples,
             max_attempts=max_attempts,
+            seed=seed,
             _info=engine_info,
         )
         info = InferenceInfo(
@@ -459,8 +512,12 @@ def _run_inference(
             args=args,
             num_samples=num_samples,
             resample=resample,
+            seed=seed,
             _info=engine_info,
         )
+        weights = None
+        if not resample:
+            weights = _normalize_log_weights(engine_info["log_weights"])
         info = InferenceInfo(
             method="importance",
             num_samples=len(traces),
@@ -469,7 +526,7 @@ def _run_inference(
             log_marginal_likelihood=engine_info.get("log_marginal_likelihood"),
             ess=engine_info.get("ess"),
         )
-        return Posterior(traces, info=info)
+        return Posterior(traces, weights=weights, info=info)
 
     elif method == "mh":
         burn_in = kwargs.pop("burn_in", None)
@@ -480,6 +537,7 @@ def _run_inference(
             num_samples=num_samples,
             burn_in=burn_in,
             lag=lag,
+            seed=seed,
             _info=engine_info,
         )
         info = InferenceInfo(

@@ -81,6 +81,18 @@ class TestPriorPredictive:
         pp = prior_predictive(coin, num_samples=500)
         assert 0.5 < pp.mean() < 0.9
 
+    def test_seed_reproducible(self):
+        @model
+        def coin():
+            return flip(0.5)
+
+        np.random.seed(1)
+        pp_a = prior_predictive(coin, num_samples=100, seed=123)
+        np.random.seed(999)
+        pp_b = prior_predictive(coin, num_samples=100, seed=123)
+
+        assert pp_a.samples == pp_b.samples
+
 
 class TestConditionAcceptanceRate:
     def test_no_condition(self):
@@ -190,6 +202,22 @@ class TestPosteriorPredictive:
         post = infer(obs, method="importance", num_samples=500)
         pp = posterior_predictive(post, obs, num_samples=100)
         assert 1.0 < pp.mean() < 5.0
+
+    def test_seed_reproducible(self):
+        @model
+        def obs():
+            mu = sample(Normal(0, 5), name="mu")
+            observe(Normal(mu, 1), 3.0)
+            return mu
+
+        post = infer(obs, method="importance", num_samples=200, seed=77)
+
+        np.random.seed(1)
+        pp_a = posterior_predictive(post, obs, num_samples=50, seed=123)
+        np.random.seed(999)
+        pp_b = posterior_predictive(post, obs, num_samples=50, seed=123)
+
+        assert pp_a.samples == pp_b.samples
 
 
 class TestCompareModels:

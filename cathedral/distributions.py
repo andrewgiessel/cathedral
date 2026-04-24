@@ -14,6 +14,8 @@ from typing import Any
 import numpy as np
 from scipy import stats
 
+from cathedral._rng import get_active_rng
+
 
 class Distribution(ABC):
     """Base class for probability distributions."""
@@ -44,7 +46,7 @@ class Bernoulli(Distribution):
         self.p = p
 
     def sample(self) -> bool:
-        return bool(np.random.random() < self.p)
+        return bool(get_active_rng().random() < self.p)
 
     def log_prob(self, value: Any) -> float:
         if value:
@@ -72,7 +74,7 @@ class Categorical(Distribution):
         self._log_probs = {v: math.log(p) if p > 0 else -math.inf for v, p in zip(values, probs, strict=False)}
 
     def sample(self) -> Any:
-        idx = np.random.choice(len(self.values), p=self.probs)
+        idx = get_active_rng().choice(len(self.values), p=self.probs)
         return self.values[idx]
 
     def log_prob(self, value: Any) -> float:
@@ -101,7 +103,7 @@ class Normal(Distribution):
         self._log_sigma = math.log(sigma)
 
     def sample(self) -> float:
-        return float(np.random.normal(self.mu, self.sigma))
+        return float(get_active_rng().normal(self.mu, self.sigma))
 
     def log_prob(self, value: Any) -> float:
         z = (value - self.mu) / self.sigma
@@ -124,7 +126,7 @@ class HalfNormal(Distribution):
         self._log_sigma = math.log(sigma)
 
     def sample(self) -> float:
-        return float(abs(np.random.normal(0, self.sigma)))
+        return float(abs(get_active_rng().normal(0, self.sigma)))
 
     def log_prob(self, value: Any) -> float:
         if value < 0:
@@ -147,7 +149,7 @@ class Beta(Distribution):
         self._dist = stats.beta(a, b)
 
     def sample(self) -> float:
-        return float(np.random.beta(self.a, self.b))
+        return float(get_active_rng().beta(self.a, self.b))
 
     def log_prob(self, value: Any) -> float:
         if not 0 <= value <= 1:
@@ -170,7 +172,7 @@ class Gamma(Distribution):
         self._dist = stats.gamma(a=shape, scale=self._scale)
 
     def sample(self) -> float:
-        return float(np.random.gamma(self.shape, self._scale))
+        return float(get_active_rng().gamma(self.shape, self._scale))
 
     def log_prob(self, value: Any) -> float:
         if value < 0:
@@ -179,6 +181,28 @@ class Gamma(Distribution):
 
     def __repr__(self) -> str:
         return f"Gamma(shape={self.shape}, rate={self.rate})"
+
+
+class Exponential(Distribution):
+    """Exponential distribution with rate parameterization."""
+
+    def __init__(self, rate: float = 1.0):
+        if rate <= 0:
+            raise ValueError(f"rate must be positive, got {rate}")
+        self.rate = rate
+        self._scale = 1.0 / rate
+        self._dist = stats.expon(scale=self._scale)
+
+    def sample(self) -> float:
+        return float(get_active_rng().exponential(self._scale))
+
+    def log_prob(self, value: Any) -> float:
+        if value < 0:
+            return -math.inf
+        return float(self._dist.logpdf(value))
+
+    def __repr__(self) -> str:
+        return f"Exponential(rate={self.rate})"
 
 
 class Uniform(Distribution):
@@ -192,7 +216,7 @@ class Uniform(Distribution):
         self._log_prob_val = -math.log(high - low)
 
     def sample(self) -> float:
-        return float(np.random.uniform(self.low, self.high))
+        return float(get_active_rng().uniform(self.low, self.high))
 
     def log_prob(self, value: Any) -> float:
         if self.low <= value <= self.high:
@@ -201,6 +225,28 @@ class Uniform(Distribution):
 
     def __repr__(self) -> str:
         return f"Uniform(low={self.low}, high={self.high})"
+
+
+class LogNormal(Distribution):
+    """Log-normal distribution parameterized by underlying normal mu/sigma."""
+
+    def __init__(self, mu: float = 0.0, sigma: float = 1.0):
+        if sigma <= 0:
+            raise ValueError(f"sigma must be positive, got {sigma}")
+        self.mu = mu
+        self.sigma = sigma
+        self._dist = stats.lognorm(s=sigma, scale=math.exp(mu))
+
+    def sample(self) -> float:
+        return float(get_active_rng().lognormal(self.mu, self.sigma))
+
+    def log_prob(self, value: Any) -> float:
+        if value <= 0:
+            return -math.inf
+        return float(self._dist.logpdf(value))
+
+    def __repr__(self) -> str:
+        return f"LogNormal(mu={self.mu}, sigma={self.sigma})"
 
 
 class Poisson(Distribution):
@@ -213,7 +259,7 @@ class Poisson(Distribution):
         self._dist = stats.poisson(mu=rate)
 
     def sample(self) -> int:
-        return int(np.random.poisson(self.rate))
+        return int(get_active_rng().poisson(self.rate))
 
     def log_prob(self, value: Any) -> float:
         if value < 0 or value != int(value):
@@ -222,6 +268,33 @@ class Poisson(Distribution):
 
     def __repr__(self) -> str:
         return f"Poisson(rate={self.rate})"
+
+
+class Binomial(Distribution):
+    """Binomial distribution: number of successes in n Bernoulli trials."""
+
+    def __init__(self, n: int, p: float):
+        if n < 0 or n != int(n):
+            raise ValueError(f"n must be a non-negative integer, got {n}")
+        if not 0.0 <= p <= 1.0:
+            raise ValueError(f"p must be in [0, 1], got {p}")
+        self.n = int(n)
+        self.p = p
+        self._dist = stats.binom(n=self.n, p=p)
+
+    def sample(self) -> int:
+        return int(get_active_rng().binomial(self.n, self.p))
+
+    def log_prob(self, value: Any) -> float:
+        if value < 0 or value > self.n or value != int(value):
+            return -math.inf
+        return float(self._dist.logpmf(int(value)))
+
+    def support(self) -> list[int]:
+        return list(range(self.n + 1))
+
+    def __repr__(self) -> str:
+        return f"Binomial(n={self.n}, p={self.p})"
 
 
 class UniformDraw(Distribution):
@@ -234,7 +307,7 @@ class UniformDraw(Distribution):
         self._log_p = -math.log(len(values))
 
     def sample(self) -> Any:
-        idx = np.random.randint(len(self.values))
+        idx = get_active_rng().integers(len(self.values))
         return self.values[idx]
 
     def log_prob(self, value: Any) -> float:
@@ -259,7 +332,7 @@ class Geometric(Distribution):
         self._dist = stats.geom(p)
 
     def sample(self) -> int:
-        return int(np.random.geometric(self.p)) - 1
+        return int(get_active_rng().geometric(self.p)) - 1
 
     def log_prob(self, value: Any) -> float:
         if value < 0 or value != int(value):
@@ -281,7 +354,7 @@ class Dirichlet(Distribution):
         self._dist = stats.dirichlet(alpha_arr)
 
     def sample(self) -> np.ndarray:
-        return np.random.dirichlet(self.alpha)
+        return get_active_rng().dirichlet(self.alpha)
 
     def log_prob(self, value: Any) -> float:
         value = np.asarray(value, dtype=float)
@@ -293,3 +366,26 @@ class Dirichlet(Distribution):
 
     def __repr__(self) -> str:
         return f"Dirichlet(alpha={self.alpha.tolist()})"
+
+
+class StudentT(Distribution):
+    """Student's t distribution."""
+
+    def __init__(self, df: float, loc: float = 0.0, scale: float = 1.0):
+        if df <= 0:
+            raise ValueError(f"df must be positive, got {df}")
+        if scale <= 0:
+            raise ValueError(f"scale must be positive, got {scale}")
+        self.df = df
+        self.loc = loc
+        self.scale = scale
+        self._dist = stats.t(df=df, loc=loc, scale=scale)
+
+    def sample(self) -> float:
+        return float(self.loc + self.scale * get_active_rng().standard_t(self.df))
+
+    def log_prob(self, value: Any) -> float:
+        return float(self._dist.logpdf(value))
+
+    def __repr__(self) -> str:
+        return f"StudentT(df={self.df}, loc={self.loc}, scale={self.scale})"

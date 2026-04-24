@@ -19,8 +19,7 @@ import math
 from collections.abc import Callable
 from typing import Any
 
-import numpy as np
-
+from cathedral._rng import Generator, SeedLike, make_rng
 from cathedral.trace import Rejected, Trace, run_with_trace
 
 
@@ -32,6 +31,7 @@ def mh_sample(
     burn_in: int | None = None,
     lag: int = 1,
     max_init_attempts: int = 10000,
+    seed: SeedLike = None,
     _info: dict | None = None,
 ) -> list[Trace]:
     """Run single-site Metropolis-Hastings on a model.
@@ -44,6 +44,7 @@ def mh_sample(
         burn_in: Steps to discard before collecting. Defaults to num_samples // 2.
         lag: Keep every nth sample after burn-in (thinning). Default 1 (keep all).
         max_init_attempts: Max forward-sampling tries to find a valid initial trace.
+        seed: Optional seed for reproducible chain evolution.
         _info: If provided, populated with diagnostic metadata.
 
     Returns:
@@ -57,7 +58,8 @@ def mh_sample(
     if burn_in is None:
         burn_in = num_samples // 2
 
-    current = _get_initial_trace(model_fn, args, kwargs, max_init_attempts)
+    rng = make_rng(seed)
+    current = _get_initial_trace(model_fn, args, kwargs, max_init_attempts, rng)
 
     total_steps = burn_in + num_samples * lag
     traces: list[Trace] = []
@@ -65,7 +67,7 @@ def mh_sample(
 
     for step in range(total_steps):
         prev = current
-        current = _mh_step(model_fn, args, kwargs, current)
+        current = _mh_step(model_fn, args, kwargs, current, rng)
         if current is not prev:
             accepted += 1
         if step >= burn_in and (step - burn_in) % lag == 0:
@@ -85,11 +87,12 @@ def _get_initial_trace(
     args: tuple,
     kwargs: dict[str, Any],
     max_attempts: int,
+    rng: Generator,
 ) -> Trace:
     """Get an initial valid trace by forward sampling."""
     for _ in range(max_attempts):
         try:
-            return run_with_trace(model_fn, args=args, kwargs=kwargs)
+            return run_with_trace(model_fn, args=args, kwargs=kwargs, rng=rng)
         except Rejected:
             continue
     raise RuntimeError(
@@ -103,6 +106,7 @@ def _mh_step(
     args: tuple,
     kwargs: dict[str, Any],
     current: Trace,
+    rng: Generator,
 ) -> Trace:
     """Perform one single-site MH step.
 
@@ -113,12 +117,12 @@ def _mh_step(
     if not addresses:
         return current
 
-    selected = addresses[np.random.randint(len(addresses))]
+    selected = addresses[rng.integers(len(addresses))]
 
     interventions = {addr: choice.value for addr, choice in current.choices.items() if addr != selected}
 
     try:
-        proposed = run_with_trace(model_fn, args=args, kwargs=kwargs, interventions=interventions)
+        proposed = run_with_trace(model_fn, args=args, kwargs=kwargs, interventions=interventions, rng=rng)
     except Rejected:
         return current
 
@@ -127,7 +131,7 @@ def _mh_step(
 
     log_alpha = _log_acceptance_ratio(current, proposed, selected)
 
-    if log_alpha >= 0 or math.log(np.random.random()) < log_alpha:
+    if log_alpha >= 0 or math.log(rng.random()) < log_alpha:
         return proposed
     return current
 

@@ -112,6 +112,22 @@ class TestImportanceSampling:
         traces = importance_sample(simple, num_samples=100, resample=False)
         assert len(traces) == 100
 
+    def test_infer_no_resample_uses_weights(self):
+        from cathedral.model import infer
+
+        @model
+        def weighted_coin():
+            x = flip(0.5)
+            observe(Normal(1.0 if x else 0.0, 0.1), 1.0)
+            return x
+
+        posterior = infer(weighted_coin, method="importance", num_samples=500, resample=False, seed=123)
+        unweighted = sum(posterior.samples) / len(posterior.samples)
+
+        assert posterior.ess is not None
+        assert posterior.probability() > 0.9
+        assert abs(posterior.probability() - unweighted) > 0.2
+
     def test_impossible_observation(self):
         """Should raise if all samples are rejected via condition()."""
 
@@ -121,6 +137,60 @@ class TestImportanceSampling:
 
         with pytest.raises(RuntimeError, match="all samples were rejected"):
             importance_sample(impossible, num_samples=100)
+
+
+class TestSeededInference:
+    def test_rejection_seed_reproducible(self):
+        def two_coins():
+            return {"a": flip(0.3), "b": flip(0.8)}
+
+        np.random.seed(1)
+        traces_a = rejection_sample(two_coins, num_samples=50, seed=123)
+        np.random.seed(999)
+        traces_b = rejection_sample(two_coins, num_samples=50, seed=123)
+
+        assert [t.result for t in traces_a] == [t.result for t in traces_b]
+
+    def test_importance_seed_reproducible_with_resampling(self):
+        def gaussian():
+            x = sample(Normal(0, 1))
+            observe(Normal(x, 0.25), 0.5)
+            return x
+
+        np.random.seed(1)
+        traces_a = importance_sample(gaussian, num_samples=100, seed=123)
+        np.random.seed(999)
+        traces_b = importance_sample(gaussian, num_samples=100, seed=123)
+
+        assert [t.result for t in traces_a] == [t.result for t in traces_b]
+
+    def test_mh_seed_reproducible(self):
+        def biased():
+            fair = flip(0.5)
+            result = flip(0.5 if fair else 0.9)
+            condition(result)
+            return fair
+
+        np.random.seed(1)
+        traces_a = mh_sample(biased, num_samples=100, burn_in=50, seed=123)
+        np.random.seed(999)
+        traces_b = mh_sample(biased, num_samples=100, burn_in=50, seed=123)
+
+        assert [t.result for t in traces_a] == [t.result for t in traces_b]
+
+    def test_infer_seed_ignores_global_numpy_rng_state(self):
+        from cathedral.model import infer
+
+        @model
+        def coin():
+            return flip(0.7)
+
+        np.random.seed(1)
+        posterior_a = infer(coin, method="rejection", num_samples=100, seed=321)
+        np.random.seed(999)
+        posterior_b = infer(coin, method="rejection", num_samples=100, seed=321)
+
+        assert posterior_a.samples == posterior_b.samples
 
 
 class TestPosterior:
@@ -226,6 +296,24 @@ class TestPosterior:
 
         posterior = infer(coin, method="rejection", num_samples=100)
         assert posterior.num_samples == 100
+
+    def test_summary(self):
+        from cathedral.model import infer
+
+        @model
+        def normal_model():
+            return sample(Normal(0, 1))
+
+        posterior = infer(normal_model, method="rejection", num_samples=1000, seed=123)
+        summary = posterior.summary(level=0.8)
+
+        assert summary["num_samples"] == posterior.num_samples
+        assert summary["mean"] == posterior.mean()
+        assert summary["std"] == posterior.std()
+        assert summary["credible_interval"] == posterior.credible_interval(0.8)
+        assert summary["level"] == 0.8
+        assert summary["ess"] == posterior.ess
+        assert summary["has_fixed_structure"] == posterior.has_fixed_structure
 
 
 class TestMHSampling:

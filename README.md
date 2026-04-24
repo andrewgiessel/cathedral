@@ -148,30 +148,68 @@ def animal():
 
 ## Primitives
 
-| Primitive | Description |
-|-----------|-------------|
-| `flip(p)` | Flip a coin with probability `p` of True |
-| `sample(dist)` | Draw from any distribution (`Normal`, `Beta`, `Gamma`, ...) |
-| `condition(pred)` | Hard conditioning: reject execution if `pred` is False |
-| `observe(dist, val)` | Soft conditioning: score execution by `dist.log_prob(val)` |
-| `factor(score)` | Add arbitrary log-probability to the trace |
-| `mem(fn)` | Stochastic memoization: same args always return same random result |
-| `DPmem(alpha, fn)` | Dirichlet Process memoization for nonparametric models |
+| Primitive            | Description                                                        |
+| -------------------- | ------------------------------------------------------------------ |
+| `flip(p)`            | Flip a coin with probability `p` of True                           |
+| `sample(dist)`       | Draw from any distribution (`Normal`, `Beta`, `Gamma`, ...)        |
+| `condition(pred)`    | Hard conditioning: reject execution if `pred` is False             |
+| `observe(dist, val)` | Soft conditioning: score execution by `dist.log_prob(val)`         |
+| `factor(score)`      | Add arbitrary log-probability to the trace                         |
+| `mem(fn)`            | Stochastic memoization: same args always return same random result |
+| `DPmem(alpha, fn)`   | Dirichlet Process memoization for nonparametric models             |
 
 ## Inference Methods
 
-| Method | Syntax | Best for |
-|--------|--------|----------|
-| **Rejection sampling** | `infer(m, method="rejection")` | Small discrete models with `condition()` |
-| **Importance sampling** | `infer(m, method="importance")` | Continuous models with `observe()` |
-| **Single-site MH** | `infer(m, method="mh")` | Complex models, rare conditions, many latent variables |
-| **Exact enumeration** | `infer(m, method="enumerate")` | Small discrete models where you want exact answers |
+| Method                  | Syntax                          | Best for                                               |
+| ----------------------- | ------------------------------- | ------------------------------------------------------ |
+| **Rejection sampling**  | `infer(m, method="rejection")`  | Small discrete models with `condition()`               |
+| **Importance sampling** | `infer(m, method="importance")` | Continuous models with `observe()`                     |
+| **Single-site MH**      | `infer(m, method="mh")`         | Complex models, rare conditions, many latent variables |
+| **Exact enumeration**   | `infer(m, method="enumerate")`  | Small discrete models where you want exact answers     |
+
+### Reproducible Inference
+
+Rejection, importance, and MH support seeded execution:
+
+```python
+posterior = infer(my_model, method="importance", num_samples=5000, seed=123)
+```
+
+Reproducibility contract:
+
+- Same `seed` should give identical results for the same inference call.
+- Seeded reproducibility covers random choices made through Cathedral primitives and distributions.
+- Raw `np.random` calls inside user model code are outside Cathedral's RNG context.
+- Unseeded runs continue to use Cathedral's internal default RNG behavior.
+
+### Weighted Importance Sampling
+
+Importance sampling defaults to resampling, which returns an unweighted posterior:
+
+```python
+posterior = infer(my_model, method="importance", num_samples=5000)
+```
+
+For diagnostics or lower-variance analysis, you can keep weighted traces:
+
+```python
+posterior = infer(
+    my_model,
+    method="importance",
+    num_samples=5000,
+    resample=False,
+    seed=123,
+)
+
+posterior.mean("param")  # uses normalized importance weights
+posterior.ess            # effective sample size from the weights
+```
 
 ## Distributions
 
-**Continuous:** `Normal`, `HalfNormal`, `Beta`, `Gamma`, `Uniform`
+**Continuous:** `Normal`, `HalfNormal`, `Beta`, `Gamma`, `Exponential`, `Uniform`, `LogNormal`, `StudentT`
 
-**Discrete:** `Bernoulli`, `Categorical`, `UniformDraw`, `Poisson`, `Geometric`
+**Discrete:** `Bernoulli`, `Categorical`, `UniformDraw`, `Poisson`, `Geometric`, `Binomial`
 
 **Multivariate:** `Dirichlet`
 
@@ -188,6 +226,7 @@ posterior.probability("flag")               # P(flag = True)
 posterior.probability(lambda r: r > 0)      # P(predicate)
 posterior.histogram("param")                # empirical distribution
 posterior.credible_interval(0.95, "param")  # 95% credible interval
+posterior.summary("param")                  # common numeric summaries
 ```
 
 ## Diagnostics & Model Understanding
@@ -261,23 +300,48 @@ idata = posterior.to_arviz()
 
 The `examples/` directory contains runnable demonstrations inspired by [Probabilistic Models of Cognition](http://probmods.org/):
 
-| File | Topics |
-|------|--------|
-| `01_generative_models.py` | Coin flips, composition, `mem`, stochastic recursion, causal models |
-| `02_conditioning.py` | Bayesian reasoning, causal vs diagnostic inference, explaining away |
-| `03_patterns_of_inference.py` | Bayesian updating, Monty Hall, Occam's razor |
-| `04_bayesian_data_analysis.py` | Parameter estimation, model comparison, linear regression |
-| `05_mixture_models.py` | Gaussian mixtures, `DPmem` for infinite components |
-| `06_social_cognition.py` | Goal inference, preference learning, theory of mind |
-| `07_grammars_and_recursion.py` | PCFGs, random arithmetic, conditioned generation |
+| File                           | Topics                                                              |
+| ------------------------------ | ------------------------------------------------------------------- |
+| `01_generative_models.py`      | Coin flips, composition, `mem`, stochastic recursion, causal models |
+| `02_conditioning.py`           | Bayesian reasoning, causal vs diagnostic inference, explaining away |
+| `03_patterns_of_inference.py`  | Bayesian updating, Monty Hall, Occam's razor                        |
+| `04_bayesian_data_analysis.py` | Parameter estimation, model comparison, linear regression           |
+| `05_mixture_models.py`         | Gaussian mixtures, `DPmem` for infinite components                  |
+| `06_social_cognition.py`       | Goal inference, preference learning, theory of mind                 |
+| `07_grammars_and_recursion.py` | PCFGs, random arithmetic, conditioned generation                    |
 
 Plus standalone examples: `sprinkler.py`, `coin_flip.py`, `linear_regression.py`.
+
+## Benchmarks
+
+A lightweight benchmark runner is included for the `v0.3` inference work:
+
+```bash
+uv run python benchmarks/inference_benchmarks.py
+uv run python benchmarks/inference_benchmarks.py --repeats 3 --sample-multiplier 10
+```
+
+The script exercises representative rejection and importance models and reports:
+
+- wall-clock time
+- attempts/sec for rejection-based cases
+- ESS and ESS/sec for importance-based cases
+- averages across repeated runs
+
+The `v0.3` benchmark work also evaluated thread-based parallel rejection and importance sampling. It was deferred because the tested workloads were mostly flat or slightly slower with worker threads; seeded serial inference remains the supported `v0.3` path.
+
+Current benchmark cases:
+
+- `rejection_sprinkler`
+- `rejection_bag_of_marbles`
+- `importance_coin_bias_estimation`
+- `importance_bayesian_regression`
 
 ## Architecture
 
 Models are plain Python functions. A trace-based execution engine (via `contextvars`) records every random choice without passing trace objects through user code. Inference engines run models repeatedly, using interventions to replay or modify choices.
 
-```
+```text
 User code           Trace engine           Inference
 ─────────           ────────────           ─────────
 @model fn    →    TraceContext      →    rejection / importance

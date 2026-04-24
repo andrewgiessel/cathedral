@@ -10,8 +10,7 @@ import math
 from collections.abc import Callable
 from typing import Any
 
-import numpy as np
-
+from cathedral._rng import SeedLike, make_rng
 from cathedral.model import Posterior
 from cathedral.trace import Rejected, Trace, run_with_trace
 
@@ -20,6 +19,7 @@ def prior_predictive(
     model_fn: Callable,
     *args: Any,
     num_samples: int = 1000,
+    seed: SeedLike = None,
 ) -> Posterior:
     """Run a model forward without conditioning to examine the prior predictive.
 
@@ -31,6 +31,7 @@ def prior_predictive(
         model_fn: A @model-decorated function or plain callable.
         *args: Arguments to pass to the model function.
         num_samples: Number of forward samples to collect.
+        seed: Optional seed for reproducible forward sampling.
 
     Returns:
         A Posterior containing unconditioned forward samples.
@@ -38,12 +39,13 @@ def prior_predictive(
     from cathedral.model import InferenceInfo
 
     fn = getattr(model_fn, "_original_fn", model_fn)
+    rng = make_rng(seed)
     traces: list[Trace] = []
     rejected = 0
 
     for _ in range(num_samples):
         try:
-            trace = run_with_trace(fn, args=args)
+            trace = run_with_trace(fn, args=args, rng=rng)
             traces.append(trace)
         except Rejected:
             rejected += 1
@@ -66,6 +68,7 @@ def condition_acceptance_rate(
     model_fn: Callable,
     *args: Any,
     num_samples: int = 10000,
+    seed: SeedLike = None,
 ) -> float:
     """Estimate what fraction of prior samples satisfy the model's conditions.
 
@@ -77,16 +80,18 @@ def condition_acceptance_rate(
         model_fn: A @model-decorated function or plain callable.
         *args: Arguments to pass to the model function.
         num_samples: Number of forward samples to attempt.
+        seed: Optional seed for reproducible acceptance-rate estimates.
 
     Returns:
         Fraction of samples that were not rejected (0.0 to 1.0).
     """
     fn = getattr(model_fn, "_original_fn", model_fn)
+    rng = make_rng(seed)
     accepted = 0
 
     for _ in range(num_samples):
         try:
-            run_with_trace(fn, args=args)
+            run_with_trace(fn, args=args, rng=rng)
             accepted += 1
         except Rejected:
             pass
@@ -99,6 +104,7 @@ def posterior_predictive(
     model_fn: Callable,
     *args: Any,
     num_samples: int | None = None,
+    seed: SeedLike = None,
 ) -> Posterior:
     """Generate posterior predictive samples by replaying the model.
 
@@ -112,6 +118,7 @@ def posterior_predictive(
         *args: Arguments to pass to the model function.
         num_samples: Number of predictive samples. Defaults to
             min(posterior.num_samples, 500).
+        seed: Optional seed for reproducible posterior predictive draws.
 
     Returns:
         A Posterior containing posterior predictive samples.
@@ -123,15 +130,16 @@ def posterior_predictive(
     if num_samples is None:
         num_samples = min(posterior.num_samples, 500)
 
+    rng = make_rng(seed)
     source_traces = posterior.traces
-    indices = np.random.choice(len(source_traces), size=num_samples, replace=True)
+    indices = rng.choice(len(source_traces), size=num_samples, replace=True)
 
     traces: list[Trace] = []
     for idx in indices:
         source = source_traces[idx]
         interventions = {addr: choice.value for addr, choice in source.choices.items()}
         try:
-            trace = run_with_trace(fn, args=args, interventions=interventions)
+            trace = run_with_trace(fn, args=args, interventions=interventions, rng=rng)
             traces.append(trace)
         except Rejected:
             traces.append(source)

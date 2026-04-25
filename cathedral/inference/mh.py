@@ -31,6 +31,7 @@ def mh_sample(
     burn_in: int | None = None,
     lag: int = 1,
     max_init_attempts: int = 10000,
+    initial_trace: Trace | None = None,
     seed: SeedLike = None,
     _info: dict | None = None,
 ) -> list[Trace]:
@@ -44,6 +45,8 @@ def mh_sample(
         burn_in: Steps to discard before collecting. Defaults to num_samples // 2.
         lag: Keep every nth sample after burn-in (thinning). Default 1 (keep all).
         max_init_attempts: Max forward-sampling tries to find a valid initial trace.
+        initial_trace: Optional trace to use as the starting chain state.
+            If provided, skips initial forward sampling.
         seed: Optional seed for reproducible chain evolution.
         _info: If provided, populated with diagnostic metadata.
 
@@ -59,7 +62,11 @@ def mh_sample(
         burn_in = num_samples // 2
 
     rng = make_rng(seed)
-    current = _get_initial_trace(model_fn, args, kwargs, max_init_attempts, rng)
+    current = (
+        initial_trace
+        if initial_trace is not None
+        else _get_initial_trace(model_fn, args, kwargs, max_init_attempts, rng)
+    )
 
     total_steps = burn_in + num_samples * lag
     traces: list[Trace] = []

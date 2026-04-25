@@ -229,6 +229,25 @@ posterior.credible_interval(0.95, "param")  # 95% credible interval
 posterior.summary("param")                  # common numeric summaries
 ```
 
+Posteriors can also be saved for local checkpointing and loaded later:
+
+```python
+from cathedral import Posterior
+
+posterior.save("posterior.pkl")
+posterior = Posterior.load("posterior.pkl")
+```
+
+This uses Python pickle, so only load posterior files you created or otherwise trust.
+
+You can continue a posterior with the same inference method:
+
+```python
+posterior = posterior.extend(my_model, num_samples=1000, seed=456)
+```
+
+For rejection, importance, and MH, extension appends new traces to the existing posterior. For enumeration, extension recomputes the enumerated path set instead of duplicating exact paths.
+
 ## Diagnostics & Model Understanding
 
 Every inference run returns diagnostic metadata automatically:
@@ -349,6 +368,8 @@ flip/sample  →    Choice records    →    MH (propose + accept)
 condition    →    log_score         →    enumeration (worklist)
 observe      →    log_score         →    Posterior + diagnostics
 ```
+
+For a contributor-oriented walkthrough of the implementation, see [IMPLEMENTATION.md](IMPLEMENTATION.md).
 
 ## References
 

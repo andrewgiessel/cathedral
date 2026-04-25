@@ -1,6 +1,9 @@
 """Tests for inference diagnostics: InferenceInfo, Posterior diagnostic properties."""
 
+import pickle
+
 import numpy as np
+import pytest
 
 from cathedral import model
 from cathedral.distributions import Normal
@@ -212,3 +215,131 @@ class TestPosteriorDiagnostics:
         diag = p.diagnostics()
         assert "total_steps:" in diag
         assert "burn_in:" in diag
+
+
+class TestPosteriorPersistence:
+    def test_save_load_round_trip(self, tmp_path):
+        @model
+        def coin():
+            x = flip(0.7, name="x")
+            return {"x": x}
+
+        posterior = infer(coin, method="rejection", num_samples=25, seed=123)
+        path = tmp_path / "posterior.pkl"
+
+        posterior.save(path)
+        loaded = Posterior.load(path)
+
+        assert loaded.samples == posterior.samples
+        assert loaded.num_samples == posterior.num_samples
+        assert loaded.info is not None
+        assert loaded.info.method == "rejection"
+        assert loaded.traces[0].choices["x"].value == posterior.traces[0].choices["x"].value
+
+    def test_save_load_preserves_weighted_variable_structure_posterior(self, tmp_path):
+        @model
+        def branching():
+            a = flip(0.5, name="a")
+            if a:
+                sample(Normal(0, 1), name="b")
+            else:
+                sample(Normal(5, 1), name="c")
+            observe(Normal(1.0 if a else 0.0, 0.1), 1.0)
+            return a
+
+        posterior = infer(branching, method="importance", num_samples=50, resample=False, seed=123)
+        path = tmp_path / "weighted-variable.pkl"
+
+        posterior.save(path)
+        loaded = Posterior.load(path)
+
+        assert loaded.has_fixed_structure is False
+        assert loaded.ess == posterior.ess
+        assert loaded.probability() == posterior.probability()
+        assert loaded.info is not None
+        assert loaded.info.log_weights is not None
+        assert np.array_equal(loaded.info.log_weights, posterior.info.log_weights)
+
+    def test_load_rejects_non_posterior_pickle(self, tmp_path):
+        path = tmp_path / "not-a-posterior.pkl"
+        with path.open("wb") as f:
+            pickle.dump({"not": "a posterior"}, f)
+
+        with pytest.raises(TypeError, match="Expected a Posterior pickle"):
+            Posterior.load(path)
+
+
+class TestPosteriorExtend:
+    def test_extend_rejection_appends_samples(self):
+        @model
+        def coin():
+            return flip(0.7)
+
+        posterior = infer(coin, method="rejection", num_samples=20, seed=123)
+        extended = posterior.extend(coin, num_samples=10, seed=456)
+
+        assert extended.num_samples == 30
+        assert extended.samples[:20] == posterior.samples
+        assert extended.info is not None
+        assert extended.info.method == "rejection"
+        assert extended.info.num_samples == 30
+        assert extended.info.num_attempts is not None
+
+    def test_extend_weighted_importance_renormalizes_weights(self):
+        @model
+        def weighted_coin():
+            x = flip(0.5)
+            observe(Normal(1.0 if x else 0.0, 0.1), 1.0)
+            return x
+
+        posterior = infer(weighted_coin, method="importance", num_samples=20, resample=False, seed=123)
+        extended = posterior.extend(weighted_coin, num_samples=30, seed=456)
+
+        assert extended.num_samples == 50
+        assert extended.samples[:20] == posterior.samples
+        assert extended.info is not None
+        assert extended.info.log_weights is not None
+        assert len(extended.info.log_weights) == 50
+        assert extended.ess is not None
+        assert extended.probability() > 0.9
+
+    def test_extend_mh_continues_and_appends_samples(self):
+        @model
+        def coin():
+            fair = flip(0.5)
+            result = flip(0.5 if fair else 0.9)
+            condition(result)
+            return fair
+
+        posterior = infer(coin, method="mh", num_samples=20, burn_in=5, seed=123)
+        extended = posterior.extend(coin, num_samples=10, seed=456)
+
+        assert extended.num_samples == 30
+        assert extended.samples[:20] == posterior.samples
+        assert extended.info is not None
+        assert extended.info.method == "mh"
+        assert extended.info.extra["total_steps"] == 35
+
+    def test_extend_enumerate_recomputes_without_duplicate_paths(self):
+        @model
+        def coin():
+            return flip(0.6)
+
+        posterior = infer(coin, method="enumerate")
+        extended = posterior.extend(coin)
+
+        assert extended.num_samples == 2
+        assert extended.num_samples == posterior.num_samples
+        assert abs(extended.probability() - 0.6) < 1e-10
+
+    def test_extend_requires_inference_metadata(self):
+        from cathedral.trace import Trace
+
+        posterior = Posterior([Trace(result=True)])
+
+        @model
+        def coin():
+            return flip(0.5)
+
+        with pytest.raises(ValueError, match="requires inference metadata"):
+            posterior.extend(coin, num_samples=10)

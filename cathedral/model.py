@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import pickle
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -124,6 +126,155 @@ class Posterior:
         if self.info is not None:
             return self.info.log_marginal_likelihood
         return None
+
+    def save(self, path: str | Path) -> None:
+        """Save this posterior to a pickle file.
+
+        Pickle is intended for local checkpointing with trusted files. Do not
+        load posterior pickle files from untrusted sources.
+
+        Args:
+            path: File path where the posterior should be written.
+        """
+        with Path(path).open("wb") as f:
+            pickle.dump(self, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    @classmethod
+    def load(cls, path: str | Path) -> Posterior:
+        """Load a posterior from a pickle file.
+
+        Pickle can execute code while loading. Only load files you created or
+        otherwise trust.
+
+        Args:
+            path: File path to a posterior pickle file.
+
+        Returns:
+            The loaded Posterior.
+
+        Raises:
+            TypeError: If the pickle file does not contain a Posterior.
+        """
+        with Path(path).open("rb") as f:
+            posterior = pickle.load(f)  # noqa: S301
+        if not isinstance(posterior, cls):
+            raise TypeError(f"Expected a Posterior pickle, got {type(posterior).__name__}")
+        return posterior
+
+    def extend(
+        self,
+        model_fn: Callable,
+        *args: Any,
+        num_samples: int | None = None,
+        capture_scopes: bool = False,
+        condition: Callable[[Any], bool] | None = None,
+        seed: SeedLike = None,
+        **kwargs: Any,
+    ) -> Posterior:
+        """Continue inference with the same method and return a combined posterior.
+
+        Rejection and importance sampling append new traces. MH continues from
+        the last trace in this posterior and appends the new chain states.
+        Enumeration recomputes the enumerated path set instead of duplicating
+        exact paths.
+
+        Args:
+            model_fn: The same model function used to create this posterior.
+            *args: Arguments to pass to the model function.
+            num_samples: Number of additional samples to draw. Defaults to the
+                current posterior size for sampling methods.
+            capture_scopes: If True, record scope paths on newly generated traces.
+            condition: Optional external condition predicate to apply while extending.
+            seed: Optional seed for the extension run.
+            **kwargs: Additional keyword arguments for the original inference method.
+
+        Returns:
+            A Posterior containing the original traces plus new traces for
+            sampling methods, or a recomputed Posterior for enumeration.
+
+        Raises:
+            ValueError: If this posterior does not have inference method metadata.
+        """
+        if self.info is None:
+            raise ValueError("Posterior.extend() requires inference metadata from infer().")
+
+        method = self.info.method
+        requested = self.num_samples if num_samples is None else num_samples
+
+        if method == "mh":
+            return self._extend_mh(
+                model_fn,
+                args,
+                requested,
+                capture_scopes=capture_scopes,
+                condition=condition,
+                seed=seed,
+                **kwargs,
+            )
+
+        if method == "importance" and "resample" not in kwargs:
+            kwargs["resample"] = self._weights is None
+
+        new = infer(
+            model_fn,
+            *args,
+            method=method,
+            num_samples=requested,
+            capture_scopes=capture_scopes,
+            condition=condition,
+            seed=seed,
+            **kwargs,
+        )
+
+        if method == "rejection":
+            return _combine_rejection_posteriors(self, new)
+        if method == "importance":
+            return _combine_importance_posteriors(self, new)
+        if method == "enumerate":
+            return new
+
+        raise ValueError(f"Posterior.extend() does not support method {method!r}.")
+
+    def _extend_mh(
+        self,
+        model_fn: Callable,
+        args: tuple,
+        num_samples: int,
+        *,
+        capture_scopes: bool,
+        condition: Callable[[Any], bool] | None,
+        seed: SeedLike,
+        **kwargs: Any,
+    ) -> Posterior:
+        """Continue MH from the last retained trace."""
+        if self.info is None:
+            raise ValueError("Posterior.extend() requires inference metadata from infer().")
+
+        fn = getattr(model_fn, "_original_fn", model_fn)
+        if condition is not None:
+            fn = _wrap_with_condition(fn, condition)
+
+        burn_in = kwargs.pop("burn_in", 0)
+        lag = kwargs.pop("lag", 1)
+        engine_info: dict = {}
+        token = _CAPTURE_SCOPES.set(capture_scopes)
+        try:
+            new_traces = mh_sample(
+                fn,
+                args=args,
+                num_samples=num_samples,
+                burn_in=burn_in,
+                lag=lag,
+                initial_trace=self.traces[-1],
+                seed=seed,
+                _info=engine_info,
+            )
+        finally:
+            _CAPTURE_SCOPES.reset(token)
+
+        combined_traces = [*self.traces, *new_traces]
+        info = _combine_mh_info(self.info, engine_info, len(combined_traces))
+        return Posterior(combined_traces, info=info)
 
     def to_arviz(self, chain_id: int = 0) -> Any:
         """Convert this Posterior to an ArviZ InferenceData object.
@@ -395,6 +546,106 @@ def _normalize_log_weights(log_weights: np.ndarray) -> np.ndarray:
     weights = np.exp(log_weights - max_log_w)
     weights /= weights.sum()
     return weights
+
+
+def _importance_diagnostics(log_weights: np.ndarray) -> tuple[float | None, float | None]:
+    """Compute log marginal likelihood and ESS from log weights."""
+    if len(log_weights) == 0:
+        return None, None
+
+    max_lw = np.max(log_weights)
+    if np.isneginf(max_lw):
+        return None, None
+
+    weights = np.exp(log_weights - max_lw)
+    log_marginal_likelihood = float(max_lw + np.log(np.mean(weights)))
+    normalized = weights / weights.sum()
+    ess = 1.0 / float(np.sum(normalized**2))
+    return log_marginal_likelihood, ess
+
+
+def _sum_optional_ints(a: int | None, b: int | None) -> int | None:
+    """Add optional integer diagnostics, preserving None when either side is unknown."""
+    if a is None or b is None:
+        return None
+    return a + b
+
+
+def _combine_rejection_posteriors(old: Posterior, new: Posterior) -> Posterior:
+    """Append rejection samples and combine acceptance diagnostics."""
+    combined_traces = [*old.traces, *new.traces]
+    num_attempts = _sum_optional_ints(old.info.num_attempts, new.info.num_attempts) if old.info and new.info else None
+    acceptance_rate = len(combined_traces) / num_attempts if num_attempts else None
+    info = InferenceInfo(
+        method="rejection",
+        num_samples=len(combined_traces),
+        num_attempts=num_attempts,
+        acceptance_rate=acceptance_rate,
+    )
+    return Posterior(combined_traces, info=info)
+
+
+def _combine_importance_posteriors(old: Posterior, new: Posterior) -> Posterior:
+    """Append importance samples, preserving weighted or resampled semantics."""
+    old_weighted = old._weights is not None
+    new_weighted = new._weights is not None
+    if old_weighted != new_weighted:
+        raise ValueError("Posterior.extend() requires the same importance resample setting.")
+
+    combined_traces = [*old.traces, *new.traces]
+    log_weights = None
+    log_marginal_likelihood = None
+    ess = None
+    weights = None
+
+    if (
+        old.info is not None
+        and new.info is not None
+        and old.info.log_weights is not None
+        and new.info.log_weights is not None
+    ):
+        log_weights = np.concatenate([old.info.log_weights, new.info.log_weights])
+        log_marginal_likelihood, ess = _importance_diagnostics(log_weights)
+        if old_weighted:
+            weights = _normalize_log_weights(log_weights)
+
+    num_attempts = _sum_optional_ints(old.info.num_attempts, new.info.num_attempts) if old.info and new.info else None
+    info = InferenceInfo(
+        method="importance",
+        num_samples=len(combined_traces),
+        num_attempts=num_attempts,
+        log_weights=log_weights,
+        log_marginal_likelihood=log_marginal_likelihood,
+        ess=ess,
+    )
+    return Posterior(combined_traces, weights=weights, info=info)
+
+
+def _combine_mh_info(old_info: InferenceInfo, new_engine_info: dict, num_samples: int) -> InferenceInfo:
+    """Combine MH diagnostics from an existing posterior and an extension run."""
+    old_total_steps = old_info.extra.get("total_steps") if old_info.extra else None
+    new_total_steps = new_engine_info.get("total_steps")
+    total_steps = _sum_optional_ints(old_total_steps, new_total_steps)
+
+    old_acceptance_rate = old_info.acceptance_rate
+    new_acceptance_rate = new_engine_info.get("acceptance_rate")
+    if total_steps and old_total_steps is not None and new_total_steps is not None:
+        old_accepted = (old_acceptance_rate or 0.0) * old_total_steps
+        new_accepted = (new_acceptance_rate or 0.0) * new_total_steps
+        acceptance_rate = (old_accepted + new_accepted) / total_steps
+    else:
+        acceptance_rate = new_acceptance_rate
+
+    return InferenceInfo(
+        method="mh",
+        num_samples=num_samples,
+        acceptance_rate=acceptance_rate,
+        extra={
+            "total_steps": total_steps,
+            "burn_in": new_engine_info.get("burn_in"),
+            "lag": new_engine_info.get("lag"),
+        },
+    )
 
 
 def infer(

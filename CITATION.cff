@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use Cathedral, please cite the archived software."
+type: software
+title: "Cathedral"
+abstract: "A Pythonic probabilistic programming library inspired by Church and WebPPL."
+authors:
+  - family-names: "Giessel"
+    given-names: "Andrew"
+repository-code: "https://github.com/andrewgiessel/cathedral"
+url: "https://andrewgiessel.github.io/cathedral/"
+license: "MIT"
+version: "0.3.2"
+date-released: "2026-05-27"
+doi: "10.5281/zenodo.20414825"

@@ -1,10 +1,9 @@
 # Cathedral
 
-<p align="center">
-  <img src="assets/logo.jpeg" alt="Cathedral Logo" width="300"/>
-</p>
+![Cathedral Logo](assets/logo.jpeg)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/andrewgiessel/cathedral/python-package.yml?branch=main)](https://github.com/andrewgiessel/cathedral/actions/workflows/python-package.yml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20414825.svg)](https://doi.org/10.5281/zenodo.20414825)
 
 A Pythonic probabilistic programming library inspired by [Church](https://cocolab.stanford.edu/papers/GoodmanEtAl2008-UncertaintyInArtificialIntelligence.pdf) and [WebPPL](http://webppl.org/). Write probabilistic models as plain Python functions, then run inference to get posteriors.
 
@@ -71,7 +70,7 @@ def medical_diagnosis():
 posterior = infer(medical_diagnosis, method="enumerate")
 ```
 
-<p align="center"><img src="assets/posterior_medical.png" width="450"/></p>
+![Posterior probability for the medical diagnosis example](assets/posterior_medical.png)
 
 Despite the low base rate, observing both symptoms raises P(disease) to 59% — a classic base-rate neglect problem that exact enumeration gets right.
 
@@ -89,7 +88,7 @@ def line_model():
 posterior = infer(line_model, method="importance", num_samples=10000)
 ```
 
-<p align="center"><img src="assets/linear_regression.png" width="800"/></p>
+![Bayesian linear regression posterior visualization](assets/linear_regression.png)
 
 ### Metropolis-Hastings: Inferring a Gaussian Mean
 
@@ -106,7 +105,7 @@ def gaussian_mean():
 posterior = infer(gaussian_mean, method="mh", num_samples=2000, burn_in=500)
 ```
 
-<p align="center"><img src="assets/mh_trace.png" width="800"/></p>
+![Metropolis-Hastings trace and posterior diagnostics](assets/mh_trace.png)
 
 ### Model Comparison
 
@@ -120,7 +119,7 @@ p_biased = infer(biased_coin, method="importance", num_samples=10000)
 print(compare_models({"fair_coin": p_fair, "biased_coin": p_biased}))
 ```
 
-<p align="center"><img src="assets/model_comparison.png" width="700"/></p>
+![Model comparison output for fair and biased coin models](assets/model_comparison.png)
 
 ### Variable-Structure Traces
 
@@ -144,7 +143,7 @@ def animal():
             return {"type": "reptile"}
 ```
 
-<p align="center"><img src="assets/variable_structure.png" width="800"/></p>
+![Variable-structure trace visualization](assets/variable_structure.png)
 
 ## Primitives
 
@@ -370,6 +369,12 @@ observe      →    log_score         →    Posterior + diagnostics
 ```
 
 For a contributor-oriented walkthrough of the implementation, see [IMPLEMENTATION.md](IMPLEMENTATION.md).
+
+## Citation
+
+If you use Cathedral, please cite the archived software:
+
+Andrew Giessel. (2026). _Cathedral_. Zenodo. [https://doi.org/10.5281/zenodo.20414825](https://doi.org/10.5281/zenodo.20414825)
 
 ## References
 

@@ -79,7 +79,7 @@ wheels = [
 
 [[package]]
 name = "cathedral"
-version = "0.3.1"
+version = "0.3.2"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },
@@ -99,6 +99,7 @@ viz = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "arviz" },
     { name = "ipykernel" },
     { name = "ipython" },
     { name = "mypy" },
@@ -122,6 +123,7 @@ provides-extras = ["dev", "viz"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "arviz", specifier = ">=0.15" },
     { name = "ipykernel" },
     { name = "ipython", specifier = ">=8.12.3" },
     { name = "mypy", specifier = ">=0.991" },

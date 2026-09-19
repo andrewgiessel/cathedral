@@ -257,6 +257,7 @@ class Posterior:
 
         burn_in = kwargs.pop("burn_in", 0)
         lag = kwargs.pop("lag", 1)
+        _reject_unknown_inference_kwargs(self.info.method, kwargs)
         engine_info: dict = {}
         token = _CAPTURE_SCOPES.set(capture_scopes)
         try:
@@ -641,6 +642,21 @@ def _combine_mh_info(old_info: InferenceInfo, new_engine_info: dict, num_samples
     else:
         acceptance_rate = new_acceptance_rate
 
+    old_msjd = old_info.extra.get("mean_squared_jump_distance") if old_info.extra else None
+    new_msjd = new_engine_info.get("mean_squared_jump_distance")
+    if (
+        total_steps
+        and old_total_steps is not None
+        and new_total_steps is not None
+        and old_msjd is not None
+        and new_msjd is not None
+    ):
+        mean_squared_jump_distance = (
+            old_msjd * old_total_steps + new_msjd * new_total_steps
+        ) / total_steps
+    else:
+        mean_squared_jump_distance = new_msjd
+
     return InferenceInfo(
         method=old_info.method,
         num_samples=num_samples,
@@ -652,7 +668,7 @@ def _combine_mh_info(old_info: InferenceInfo, new_engine_info: dict, num_samples
             "warmup": new_engine_info.get("warmup"),
             "adaptation_frozen": new_engine_info.get("adaptation_frozen"),
             "kernel_diagnostics": new_engine_info.get("kernel_diagnostics"),
-            "mean_squared_jump_distance": new_engine_info.get("mean_squared_jump_distance"),
+            "mean_squared_jump_distance": mean_squared_jump_distance,
             "sampler_state": new_engine_info.get("sampler_state"),
         },
     )
@@ -738,6 +754,13 @@ def _wrap_with_condition(fn: Callable, predicate: Callable[[Any], bool]) -> Call
     return conditioned
 
 
+def _reject_unknown_inference_kwargs(method: str, kwargs: dict[str, Any]) -> None:
+    """Raise rather than silently discarding engine options not supported by *method*."""
+    if kwargs:
+        names = ", ".join(sorted(kwargs))
+        raise TypeError(f"Unsupported keyword argument(s) for {method!r} inference: {names}")
+
+
 def _run_inference(
     fn: Callable,
     args: tuple,
@@ -750,6 +773,7 @@ def _run_inference(
 
     if method == "rejection":
         max_attempts = kwargs.pop("max_attempts", None)
+        _reject_unknown_inference_kwargs(method, kwargs)
         traces = rejection_sample(
             fn,
             args=args,
@@ -768,6 +792,7 @@ def _run_inference(
 
     elif method == "importance":
         resample = kwargs.pop("resample", True)
+        _reject_unknown_inference_kwargs(method, kwargs)
         traces = importance_sample(
             fn,
             args=args,
@@ -792,6 +817,7 @@ def _run_inference(
     elif method == "mh":
         burn_in = kwargs.pop("burn_in", None)
         lag = kwargs.pop("lag", 1)
+        _reject_unknown_inference_kwargs(method, kwargs)
         traces = mh_sample(
             fn,
             args=args,
@@ -818,9 +844,15 @@ def _run_inference(
         lag = kwargs.pop("lag", 1)
         blocks = kwargs.pop("blocks", None)
         initial_trace = kwargs.pop("initial_trace", None)
+        max_init_attempts = kwargs.pop("max_init_attempts", 10000)
+        prior_resimulation = kwargs.pop("prior_resimulation", False)
+        kernel_weights = kwargs.pop("kernel_weights", None)
+        _reject_unknown_inference_kwargs(method, kwargs)
         traces, _ = local_mh_sample(
             fn, args=args, num_samples=num_samples, warmup=warmup, lag=lag,
-            blocks=blocks, initial_trace=initial_trace, seed=seed, _info=engine_info,
+            blocks=blocks, initial_trace=initial_trace, max_init_attempts=max_init_attempts,
+            prior_resimulation=prior_resimulation, kernel_weights=kernel_weights,
+            seed=seed, _info=engine_info,
         )
         info = InferenceInfo(
             method="adaptive_mh", num_samples=len(traces), acceptance_rate=engine_info.get("acceptance_rate"),
@@ -831,6 +863,7 @@ def _run_inference(
     elif method == "enumerate":
         max_executions = kwargs.pop("max_executions", None)
         strategy = kwargs.pop("strategy", "depth_first")
+        _reject_unknown_inference_kwargs(method, kwargs)
         traces = enumerate_executions(
             fn,
             args=args,

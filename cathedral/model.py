@@ -21,6 +21,7 @@ import numpy as np
 from cathedral._rng import SeedLike
 from cathedral.inference.enumeration import enumerate_executions
 from cathedral.inference.importance import importance_sample
+from cathedral.inference.local_mh import LocalMHSamplerState, local_mh_sample
 from cathedral.inference.mh import mh_sample
 from cathedral.inference.rejection import rejection_sample
 from cathedral.trace import _CAPTURE_SCOPES, Trace
@@ -201,7 +202,7 @@ class Posterior:
         method = self.info.method
         requested = self.num_samples if num_samples is None else num_samples
 
-        if method == "mh":
+        if method in {"mh", "adaptive_mh"}:
             return self._extend_mh(
                 model_fn,
                 args,
@@ -259,16 +260,20 @@ class Posterior:
         engine_info: dict = {}
         token = _CAPTURE_SCOPES.set(capture_scopes)
         try:
-            new_traces = mh_sample(
-                fn,
-                args=args,
-                num_samples=num_samples,
-                burn_in=burn_in,
-                lag=lag,
-                initial_trace=self.traces[-1],
-                seed=seed,
-                _info=engine_info,
-            )
+            if self.info.method == "adaptive_mh":
+                if seed is not None:
+                    raise ValueError("seed cannot be supplied when resuming adaptive_mh; sampler state owns the RNG")
+                sampler_state = self.info.extra.get("sampler_state")
+                if not isinstance(sampler_state, LocalMHSamplerState):
+                    raise ValueError("adaptive_mh posterior has no resumable sampler state")
+                new_traces, _ = local_mh_sample(
+                    fn, args=args, num_samples=num_samples, lag=lag, sampler_state=sampler_state, _info=engine_info
+                )
+            else:
+                new_traces = mh_sample(
+                    fn, args=args, num_samples=num_samples, burn_in=burn_in, lag=lag,
+                    initial_trace=self.traces[-1], seed=seed, _info=engine_info,
+                )
         finally:
             _CAPTURE_SCOPES.reset(token)
 
@@ -637,13 +642,18 @@ def _combine_mh_info(old_info: InferenceInfo, new_engine_info: dict, num_samples
         acceptance_rate = new_acceptance_rate
 
     return InferenceInfo(
-        method="mh",
+        method=old_info.method,
         num_samples=num_samples,
         acceptance_rate=acceptance_rate,
         extra={
             "total_steps": total_steps,
             "burn_in": new_engine_info.get("burn_in"),
             "lag": new_engine_info.get("lag"),
+            "warmup": new_engine_info.get("warmup"),
+            "adaptation_frozen": new_engine_info.get("adaptation_frozen"),
+            "kernel_diagnostics": new_engine_info.get("kernel_diagnostics"),
+            "mean_squared_jump_distance": new_engine_info.get("mean_squared_jump_distance"),
+            "sampler_state": new_engine_info.get("sampler_state"),
         },
     )
 
@@ -803,6 +813,21 @@ def _run_inference(
         )
         return Posterior(traces, info=info)
 
+    elif method == "adaptive_mh":
+        warmup = kwargs.pop("warmup", None)
+        lag = kwargs.pop("lag", 1)
+        blocks = kwargs.pop("blocks", None)
+        initial_trace = kwargs.pop("initial_trace", None)
+        traces, _ = local_mh_sample(
+            fn, args=args, num_samples=num_samples, warmup=warmup, lag=lag,
+            blocks=blocks, initial_trace=initial_trace, seed=seed, _info=engine_info,
+        )
+        info = InferenceInfo(
+            method="adaptive_mh", num_samples=len(traces), acceptance_rate=engine_info.get("acceptance_rate"),
+            extra=engine_info,
+        )
+        return Posterior(traces, info=info)
+
     elif method == "enumerate":
         max_executions = kwargs.pop("max_executions", None)
         strategy = kwargs.pop("strategy", "depth_first")
@@ -830,5 +855,5 @@ def _run_inference(
 
     else:
         raise ValueError(
-            f"Unknown inference method: {method!r}. Choose from: 'rejection', 'importance', 'mh', 'enumerate'"
+            f"Unknown inference method: {method!r}. Choose from: 'rejection', 'importance', 'mh', 'adaptive_mh', 'enumerate'"
         )

@@ -43,6 +43,7 @@ class Choice:
     value: Any
     log_prob: float
     scope_path: tuple[str, ...] = ()
+    explicit_name: bool = False
 
 
 @dataclass
@@ -127,11 +128,17 @@ class TraceContext:
         """Pop the innermost scope from the scope stack."""
         self._scope_stack.pop()
 
-    def record_choice(self, address: str, distribution: Distribution, value: Any) -> None:
+    def record_choice(
+        self, address: str, distribution: Distribution, value: Any, *, explicit_name: bool = False
+    ) -> None:
         """Record a random choice in the trace."""
+        if address in self.trace.choices:
+            raise ValueError(
+                f"Duplicate sample address {address!r}. Explicit sample names must be unique within an execution."
+            )
         log_p = distribution.log_prob(value)
         scope_path = self._resolve_scope()
-        self.trace.choices[address] = Choice(address, distribution, value, log_p, scope_path)
+        self.trace.choices[address] = Choice(address, distribution, value, log_p, scope_path, explicit_name)
 
     def _resolve_scope(self) -> tuple[str, ...]:
         """Determine the current scope path for a choice being recorded.

@@ -272,8 +272,14 @@ class Posterior:
                 )
             else:
                 new_traces = mh_sample(
-                    fn, args=args, num_samples=num_samples, burn_in=burn_in, lag=lag,
-                    initial_trace=self.traces[-1], seed=seed, _info=engine_info,
+                    fn,
+                    args=args,
+                    num_samples=num_samples,
+                    burn_in=burn_in,
+                    lag=lag,
+                    initial_trace=self.traces[-1],
+                    seed=seed,
+                    _info=engine_info,
                 )
         finally:
             _CAPTURE_SCOPES.reset(token)
@@ -651,9 +657,7 @@ def _combine_mh_info(old_info: InferenceInfo, new_engine_info: dict, num_samples
         and old_msjd is not None
         and new_msjd is not None
     ):
-        mean_squared_jump_distance = (
-            old_msjd * old_total_steps + new_msjd * new_total_steps
-        ) / total_steps
+        mean_squared_jump_distance = (old_msjd * old_total_steps + new_msjd * new_total_steps) / total_steps
     else:
         mean_squared_jump_distance = new_msjd
 
@@ -849,13 +853,23 @@ def _run_inference(
         kernel_weights = kwargs.pop("kernel_weights", None)
         _reject_unknown_inference_kwargs(method, kwargs)
         traces, _ = local_mh_sample(
-            fn, args=args, num_samples=num_samples, warmup=warmup, lag=lag,
-            blocks=blocks, initial_trace=initial_trace, max_init_attempts=max_init_attempts,
-            prior_resimulation=prior_resimulation, kernel_weights=kernel_weights,
-            seed=seed, _info=engine_info,
+            fn,
+            args=args,
+            num_samples=num_samples,
+            warmup=warmup,
+            lag=lag,
+            blocks=blocks,
+            initial_trace=initial_trace,
+            max_init_attempts=max_init_attempts,
+            prior_resimulation=prior_resimulation,
+            kernel_weights=kernel_weights,
+            seed=seed,
+            _info=engine_info,
         )
         info = InferenceInfo(
-            method="adaptive_mh", num_samples=len(traces), acceptance_rate=engine_info.get("acceptance_rate"),
+            method="adaptive_mh",
+            num_samples=len(traces),
+            acceptance_rate=engine_info.get("acceptance_rate"),
             extra=engine_info,
         )
         return Posterior(traces, info=info)

@@ -249,7 +249,9 @@ def _run(case: Case, method: Method, *, seed: int) -> Run:
         for query_index, query in enumerate(case.queries):
             values = np.asarray([query.estimand(value) for value in posterior.samples], dtype=float)
             if values.shape != (DRAWS,) or not np.all(np.isfinite(values)):
-                raise RuntimeError(f"{case.name}/{method.name}/{query.name}: retained values were not finite scalar draws")
+                raise RuntimeError(
+                    f"{case.name}/{method.name}/{query.name}: retained values were not finite scalar draws"
+                )
             query_chains[query_index].append(values)
         chains.append(query_chains[0][-1])
     elapsed = time.perf_counter() - start
@@ -283,7 +285,9 @@ def _format(values: list[float | int | None], digits: int = 3) -> str:
         return f"{present[0]:.{digits}g}"
     mean = statistics.mean(present)
     # t(0.975, 2) for the predeclared three independent replicates.
-    half_width = 4.303 * statistics.stdev(present) / math.sqrt(len(present)) if len(present) == 3 else statistics.stdev(present)
+    half_width = (
+        4.303 * statistics.stdev(present) / math.sqrt(len(present)) if len(present) == 3 else statistics.stdev(present)
+    )
     return f"{mean:.{digits}g}[{mean - half_width:.{digits}g},{mean + half_width:.{digits}g}]"
 
 
@@ -297,11 +301,14 @@ def _failure_notes(runs: list[Run]) -> str:
 
 
 def _print_summary(case: Case, method: Method, runs: list[Run]) -> None:
-    error_columns = " ".join(
-        f"{query.name}_mean_abs_err={_format([run.errors[index][0] for run in runs])} "
-        f"{query.name}_var_abs_err={_format([run.errors[index][1] for run in runs])}"
-        for index, query in enumerate(case.queries)
-    ) + " "
+    error_columns = (
+        " ".join(
+            f"{query.name}_mean_abs_err={_format([run.errors[index][0] for run in runs])} "
+            f"{query.name}_var_abs_err={_format([run.errors[index][1] for run in runs])}"
+            for index, query in enumerate(case.queries)
+        )
+        + " "
+    )
     print(
         f"{case.name}/{method.name} "
         f"wall_s={_format([run.wall_s for run in runs])} "

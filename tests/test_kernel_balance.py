@@ -87,7 +87,9 @@ def _local_matrix(states, kernel, sigma):
             # This is only a representative draw in the rounding cell; its
             # probability is calculated independently from the exact cell mass.
             assessment = kernel.step(
-                current, target, _KernelState(log_scale=math.log(sigma)),
+                current,
+                target,
+                _KernelState(log_scale=math.log(sigma)),
                 _ForcedRNG(normal=(candidate_value - old_value) / sigma),
             )
             assert assessment.proposed is not None
@@ -113,15 +115,11 @@ def _prior_matrix(states, kernel):
         for candidate_value, proposal_mass in ((0, 1.0 - p), (1, p)):
             candidate = list(old)
             candidate[address_index] = candidate_value
-            assessment = kernel.step(
-                current, target, _KernelState(), _ForcedRNG(binomial=candidate_value)
-            )
+            assessment = kernel.step(current, target, _KernelState(), _ForcedRNG(binomial=candidate_value))
             assert assessment.proposed is not None
             assert tuple(assessment.proposed.result) == tuple(candidate)
             new_index = states.index(tuple(candidate))
-            matrix[old_index, new_index] += proposal_mass * min(
-                1.0, math.exp(assessment.log_acceptance_ratio(current))
-            )
+            matrix[old_index, new_index] += proposal_mass * min(1.0, math.exp(assessment.log_acceptance_ratio(current)))
         matrix[old_index, old_index] += 1.0 - matrix[old_index].sum()
     return matrix
 

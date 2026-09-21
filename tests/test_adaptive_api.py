@@ -76,13 +76,16 @@ def test_prior_mixture_continuation_with_lag_is_exact_and_cumulative():
     assert resumed.info.extra["sampler_state"].step == 53
 
 
-@pytest.mark.parametrize("method, options", [
-    ("rejection", {}),
-    ("importance", {}),
-    ("mh", {}),
-    ("adaptive_mh", {"warmup": 0}),
-    ("enumerate", {}),
-])
+@pytest.mark.parametrize(
+    "method, options",
+    [
+        ("rejection", {}),
+        ("importance", {}),
+        ("mh", {}),
+        ("adaptive_mh", {"warmup": 0}),
+        ("enumerate", {}),
+    ],
+)
 def test_unknown_inference_kwargs_raise(method, options):
     with pytest.raises(TypeError, match="Unsupported keyword"):
         infer(_normal_model, method=method, num_samples=2, unsupported_option=True, **options)

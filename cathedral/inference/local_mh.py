@@ -46,10 +46,7 @@ class ProposalAssessment:
         """Return the MH ratio for the supplied target traces."""
         if self.proposed is None:
             return float("-inf")
-        return (
-            self.proposed.log_joint - current.log_joint
-            + self.log_reverse - self.log_forward
-        )
+        return self.proposed.log_joint - current.log_joint + self.log_reverse - self.log_forward
 
 
 @dataclass(frozen=True)
@@ -74,7 +71,11 @@ class Kernel(Protocol):
     def name(self) -> str: ...
 
     def step(
-        self, trace: Trace, target: ReplayTarget, state: _KernelState, rng: Generator,
+        self,
+        trace: Trace,
+        target: ReplayTarget,
+        state: _KernelState,
+        rng: Generator,
     ) -> ProposalAssessment: ...
 
 
@@ -148,11 +149,19 @@ class LocalMHSamplerState:
 
 
 def local_mh_sample(  # noqa: C901
-    model_fn: Callable, args: tuple = (), kwargs: dict[str, Any] | None = None,
-    num_samples: int = 1000, *, warmup: int | None = None, lag: int = 1,
-    blocks: Sequence[Sequence[str]] | None = None, initial_trace: Trace | None = None,
-    sampler_state: LocalMHSamplerState | None = None, max_init_attempts: int = 10000,
-    seed: SeedLike = None, prior_resimulation: bool = False,
+    model_fn: Callable,
+    args: tuple = (),
+    kwargs: dict[str, Any] | None = None,
+    num_samples: int = 1000,
+    *,
+    warmup: int | None = None,
+    lag: int = 1,
+    blocks: Sequence[Sequence[str]] | None = None,
+    initial_trace: Trace | None = None,
+    sampler_state: LocalMHSamplerState | None = None,
+    max_init_attempts: int = 10000,
+    seed: SeedLike = None,
+    prior_resimulation: bool = False,
     kernel_weights: Sequence[float] | Mapping[tuple[str, ...], float] | None = None,
     _info: dict | None = None,
 ) -> tuple[list[Trace], LocalMHSamplerState]:
@@ -165,7 +174,9 @@ def local_mh_sample(  # noqa: C901
         kwargs = {}
     if num_samples < 1 or lag < 1:
         raise ValueError("num_samples and lag must be positive")
-    if sampler_state is not None and (initial_trace is not None or blocks is not None or prior_resimulation or kernel_weights is not None):
+    if sampler_state is not None and (
+        initial_trace is not None or blocks is not None or prior_resimulation or kernel_weights is not None
+    ):
         raise ValueError("sampler_state cannot be combined with kernel configuration")
     if sampler_state is not None and seed is not None:
         raise ValueError("seed cannot be supplied when resuming adaptive_mh; sampler state owns the RNG")
@@ -180,9 +191,12 @@ def local_mh_sample(  # noqa: C901
         kernels = _make_kernels(current, blocks, prior_resimulation)
         weights = _validate_kernel_weights(kernels, kernel_weights)
         state = LocalMHSamplerState(
-            trace=current, rng_state=copy.deepcopy(dict(rng.bit_generator.state)),
+            trace=current,
+            rng_state=copy.deepcopy(dict(rng.bit_generator.state)),
             kernel_states={_kernel_key(kernel): _KernelState() for kernel in kernels},
-            kernels=kernels, kernel_weights=weights, warmup=num_samples // 2 if warmup is None else warmup,
+            kernels=kernels,
+            kernel_weights=weights,
+            warmup=num_samples // 2 if warmup is None else warmup,
         )
     else:
         state = copy.deepcopy(sampler_state)
@@ -208,10 +222,10 @@ def local_mh_sample(  # noqa: C901
         # generic stabilization window for every scheduled local kernel.
         if state.step == state.warmup // 2:
             _restart_covariance_adaptation(state)
-        kernel = sole_kernel if sole_kernel is not None else state.kernels[_draw_kernel_index(state.kernel_weights, rng)]
-        current, did_accept, jump = _step(
-            current, target, kernel, state.kernel_states[_kernel_key(kernel)], rng
+        kernel = (
+            sole_kernel if sole_kernel is not None else state.kernels[_draw_kernel_index(state.kernel_weights, rng)]
         )
+        current, did_accept, jump = _step(current, target, kernel, state.kernel_states[_kernel_key(kernel)], rng)
         accepted += int(did_accept)
         jump_distance += jump
         if state.step < state.warmup and isinstance(kernel, LocalKernel):
@@ -224,11 +238,14 @@ def local_mh_sample(  # noqa: C901
     state.rng_state = copy.deepcopy(dict(rng.bit_generator.state))
     if _info is not None:
         _info.update({
-            "total_steps": total_steps, "warmup": state.warmup, "lag": lag,
+            "total_steps": total_steps,
+            "warmup": state.warmup,
+            "lag": lag,
             "acceptance_rate": accepted / total_steps,
             "mean_squared_jump_distance": jump_distance / total_steps,
             "kernel_diagnostics": _kernel_diagnostics(state),
-            "adaptation_frozen": state.step >= state.warmup, "sampler_state": state,
+            "adaptation_frozen": state.step >= state.warmup,
+            "sampler_state": state,
         })
     return traces, state
 
@@ -272,7 +289,11 @@ def _rng_state(rng: Generator) -> bytes:
 
 
 def _replay_proposal(
-    model_fn: Callable, args: tuple, kwargs: dict[str, Any], interventions: dict[str, Any], rng: Generator,
+    model_fn: Callable,
+    args: tuple,
+    kwargs: dict[str, Any],
+    interventions: dict[str, Any],
+    rng: Generator,
 ) -> Trace:
     """Replay one proposal and reject models whose replay consumes RNG."""
     before = _rng_state(rng)
@@ -322,7 +343,9 @@ def _validate_initial_trace(  # noqa: C901
 
 
 def _make_kernels(
-    trace: Trace, blocks: Sequence[Sequence[str]] | None, prior_resimulation: bool,
+    trace: Trace,
+    blocks: Sequence[Sequence[str]] | None,
+    prior_resimulation: bool,
 ) -> tuple[Kernel, ...]:
     seen: set[str] = set()
     kernels: list[Kernel] = []
@@ -349,7 +372,8 @@ def _make_kernels(
 
 
 def _validate_kernel_weights(
-    kernels: Sequence[Kernel], weights: Sequence[float] | Mapping[tuple[str, ...], float] | None,
+    kernels: Sequence[Kernel],
+    weights: Sequence[float] | Mapping[tuple[str, ...], float] | None,
 ) -> tuple[float, ...]:
     """Validate immutable compound-schedule weights and normalize them."""
     if weights is None:
@@ -372,7 +396,12 @@ def _validate_kernel_weights(
     if not math.isfinite(total) or total <= 0:
         raise ValueError("kernel_weights must have a finite positive sum")
     normalized = tuple(float(weight / total) for weight in raw)
-    active = {address for kernel, weight in zip(kernels, normalized, strict=True) if weight > 0 for address in kernel.addresses}
+    active = {
+        address
+        for kernel, weight in zip(kernels, normalized, strict=True)
+        if weight > 0
+        for address in kernel.addresses
+    }
     missing = set().union(*(set(kernel.addresses) for kernel in kernels)) - active
     if missing:
         raise ValueError(f"kernel_weights leave active choices uncovered: {sorted(missing)!r}")
@@ -423,7 +452,11 @@ def _transform(choice: Choice) -> tuple[float, Callable[[float], Any], Callable[
 
 
 def _local_assessment(  # noqa: C901
-    current: Trace, target: ReplayTarget, kernel: LocalKernel, state: _KernelState, rng: Generator,
+    current: Trace,
+    target: ReplayTarget,
+    kernel: LocalKernel,
+    state: _KernelState,
+    rng: Generator,
 ) -> ProposalAssessment:
     """Create a complete model-coordinate local random-walk assessment."""
     # Scalar moves dominate common models.  Keep their transform, proposal,
@@ -507,7 +540,9 @@ def _local_assessment(  # noqa: C901
                 return ProposalAssessment(None, 0.0, 0.0)
     # Discrete support is checked before replay so model code never receives an
     # invalid count (e.g. range(-1) or invalid indexing).
-    if any(not math.isfinite(current.choices[address].distribution.log_prob(value)) for address, value in values.items()):
+    if any(
+        not math.isfinite(current.choices[address].distribution.log_prob(value)) for address, value in values.items()
+    ):
         return ProposalAssessment(None, 0.0, 0.0)
     interventions = {address: choice.value for address, choice in current.choices.items()}
     interventions.update(values)
@@ -528,13 +563,22 @@ def _local_assessment(  # noqa: C901
         # Retain complete density accounting even though this random walk is
         # symmetric; the shared transformed-space term is computed once.
         log_z = _normal_log_density_from_cholesky(vector_new_z - vector_old_z, cholesky, log_determinant)
-        log_forward = log_z + sum(component[2](proposed.choices[address].value) for address, component in zip(kernel.addresses, new_components, strict=True))
-        log_reverse = log_z + sum(component[2](current.choices[address].value) for address, component in zip(kernel.addresses, components, strict=True))
+        log_forward = log_z + sum(
+            component[2](proposed.choices[address].value)
+            for address, component in zip(kernel.addresses, new_components, strict=True)
+        )
+        log_reverse = log_z + sum(
+            component[2](current.choices[address].value)
+            for address, component in zip(kernel.addresses, components, strict=True)
+        )
     return ProposalAssessment(proposed, log_forward, log_reverse)
 
 
 def _prior_resimulation_assessment(
-    current: Trace, target: ReplayTarget, kernel: PriorResimulationKernel, rng: Generator,
+    current: Trace,
+    target: ReplayTarget,
+    kernel: PriorResimulationKernel,
+    rng: Generator,
 ) -> ProposalAssessment:
     """Propose from the current selected conditional without replay RNG use."""
     address = kernel.addresses[0]
@@ -557,7 +601,8 @@ def _prior_resimulation_assessment(
     # Sampling is from the current conditional; reverse is evaluated from the
     # candidate conditional, where held coordinates are the candidate values.
     return ProposalAssessment(
-        proposed, current.choices[address].distribution.log_prob(value),
+        proposed,
+        current.choices[address].distribution.log_prob(value),
         proposed.choices[address].distribution.log_prob(current.choices[address].value),
     )
 
@@ -567,13 +612,17 @@ def _validate_proposed_trace(current: Trace, proposed: Trace, context: str) -> b
         raise ValueError(f"adaptive_mh requires fixed structure; a {context} changed choice addresses")
     for address, choice in proposed.choices.items():
         if _metadata(choice) != _metadata(current.choices[address]):
-            raise ValueError(f"adaptive_mh does not support {context} with changed distribution metadata at {address!r}")
+            raise ValueError(
+                f"adaptive_mh does not support {context} with changed distribution metadata at {address!r}"
+            )
         _transform(choice)
     if math.isnan(proposed.log_score) or (math.isinf(proposed.log_score) and proposed.log_score > 0):
         raise ValueError(f"adaptive_mh {context} produced an invalid numeric target score")
     if math.isnan(proposed.log_joint) or (math.isinf(proposed.log_joint) and proposed.log_joint > 0):
         raise ValueError(f"adaptive_mh {context} produced an invalid numeric target score")
-    return math.isfinite(proposed.log_joint) and all(math.isfinite(choice.log_prob) for choice in proposed.choices.values())
+    return math.isfinite(proposed.log_joint) and all(
+        math.isfinite(choice.log_prob) for choice in proposed.choices.values()
+    )
 
 
 def _normal_log_density(value: np.ndarray, mean: np.ndarray, covariance: np.ndarray) -> float:
@@ -616,7 +665,11 @@ def _normal_log_cdf(value: float) -> float:
 
 
 def _step(
-    current: Trace, target: ReplayTarget, kernel: Kernel, state: _KernelState, rng: Generator,
+    current: Trace,
+    target: ReplayTarget,
+    kernel: Kernel,
+    state: _KernelState,
+    rng: Generator,
 ) -> tuple[Trace, bool, float]:
     """Invoke a kernel and apply the single shared MH accept/reject rule."""
     state.visits += 1
@@ -684,7 +737,9 @@ def _adapt(state: _KernelState, trace: Trace, kernel: LocalKernel, accepted: boo
     state.proposal_cholesky = None
     target = 0.44 if len(vector_z) == 1 else 0.234
     gamma = min(0.05, 1.0 / math.sqrt(n))
-    state.log_scale = float(np.clip(state.log_scale + gamma * (float(accepted) - target), math.log(1e-4), math.log(1e3)))
+    state.log_scale = float(
+        np.clip(state.log_scale + gamma * (float(accepted) - target), math.log(1e-4), math.log(1e3))
+    )
 
 
 def _restart_covariance_adaptation(sampler_state: LocalMHSamplerState) -> None:

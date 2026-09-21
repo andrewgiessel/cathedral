@@ -109,12 +109,15 @@ class TestAdaptiveMH:
             observe(Normal(x + y + k, 0.5), 5.0)
             return {"x": x, "y": y, "k": k}
 
-        posterior = infer(
-            mixed_model, method="adaptive_mh", num_samples=400, warmup=100, blocks=[("x", "y")], seed=12
-        )
+        posterior = infer(mixed_model, method="adaptive_mh", num_samples=400, warmup=100, blocks=[("x", "y")], seed=12)
         assert all(float(result["k"]).is_integer() and result["k"] >= 0 for result in posterior.samples)
         assert posterior.info is not None
-        assert set(posterior.info.extra["kernel_diagnostics"]) == {"1:local:('x', 'y')", "2:local:x", "3:local:y", "4:local:k"}
+        assert set(posterior.info.extra["kernel_diagnostics"]) == {
+            "1:local:('x', 'y')",
+            "2:local:x",
+            "3:local:y",
+            "4:local:k",
+        }
 
     def test_continuation_preserves_rng_and_adaptation_state(self):
         @model
@@ -171,7 +174,9 @@ class TestAdaptiveMH:
         after_state = resumed.info.extra["sampler_state"]
         after = _covariance(after_state.kernel_states[("local", ("x",))], 1)
         assert (before == after).all()
-        assert after_state.kernel_states[("local", ("x",))].visits == state.kernel_states[("local", ("x",))].visits + 270
+        assert (
+            after_state.kernel_states[("local", ("x",))].visits == state.kernel_states[("local", ("x",))].visits + 270
+        )
 
     def test_integer_proposals_preserve_type_and_never_leave_support(self):
         @model
@@ -286,12 +291,20 @@ class TestAdaptiveMH:
             return x, y
 
         whole, _ = local_mh_sample(
-            conditional_model, num_samples=40, warmup=10, prior_resimulation=True,
-            kernel_weights=[1, 1, 2, 2], seed=91,
+            conditional_model,
+            num_samples=40,
+            warmup=10,
+            prior_resimulation=True,
+            kernel_weights=[1, 1, 2, 2],
+            seed=91,
         )
         first, state = local_mh_sample(
-            conditional_model, num_samples=20, warmup=10, prior_resimulation=True,
-            kernel_weights=[1, 1, 2, 2], seed=91,
+            conditional_model,
+            num_samples=20,
+            warmup=10,
+            prior_resimulation=True,
+            kernel_weights=[1, 1, 2, 2],
+            seed=91,
         )
         second, _ = local_mh_sample(conditional_model, num_samples=20, sampler_state=state)
         assert [trace.result for trace in [*first, *second]] == [trace.result for trace in whole]
@@ -333,8 +346,13 @@ class TestAdaptiveMH:
 
         initial = run_with_trace(model_fn, interventions={"x": 0.0})
         traces, _ = local_mh_sample(
-            model_fn, num_samples=3, warmup=0, initial_trace=initial,
-            prior_resimulation=True, kernel_weights=[0, 1], seed=7,
+            model_fn,
+            num_samples=3,
+            warmup=0,
+            initial_trace=initial,
+            prior_resimulation=True,
+            kernel_weights=[0, 1],
+            seed=7,
         )
         assert len(traces) == 3
 
@@ -357,7 +375,12 @@ class TestAdaptiveMH:
 
         info = {}
         _, state = local_mh_sample(
-            collision_model, num_samples=4, warmup=0, prior_resimulation=True, seed=8, _info=info,
+            collision_model,
+            num_samples=4,
+            warmup=0,
+            prior_resimulation=True,
+            seed=8,
+            _info=info,
         )
         diagnostics = info["kernel_diagnostics"]
         assert set(diagnostics) == {"1:local:x", "2:prior:x"}
@@ -374,6 +397,11 @@ class TestAdaptiveMH:
         initial = run_with_trace(changing_model, interventions={"branch": 0})
         with pytest.raises(ValueError, match="prior resimulation requires fixed structure"):
             local_mh_sample(
-                changing_model, num_samples=30, warmup=0, initial_trace=initial,
-                prior_resimulation=True, kernel_weights=[0, 1], seed=7,
+                changing_model,
+                num_samples=30,
+                warmup=0,
+                initial_trace=initial,
+                prior_resimulation=True,
+                kernel_weights=[0, 1],
+                seed=7,
             )

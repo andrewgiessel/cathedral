@@ -58,7 +58,7 @@ def sample(dist: Distribution, *, name: str | None = None) -> Any:
     else:
         value = dist.sample()
 
-    ctx.record_choice(address, dist, value)
+    ctx.record_choice(address, dist, value, explicit_name=name is not None)
     return value
 
 

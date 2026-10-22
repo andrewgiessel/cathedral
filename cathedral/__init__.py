@@ -18,6 +18,13 @@ Example:
     print(posterior.probability())  # P(fair | heads)
 """
 
+from cathedral.chains import (
+    ChainDiagnostics,
+    ChainPosterior,
+    EstimandSummary,
+    diagnose_chains,
+    infer_chains,
+)
 from cathedral.distributions import (
     Bernoulli,
     Beta,
@@ -45,9 +52,12 @@ __all__ = [
     "Beta",
     "Binomial",
     "Categorical",
+    "ChainDiagnostics",
+    "ChainPosterior",
     "DPmem",
     "Dirichlet",
     "Distribution",
+    "EstimandSummary",
     "Exponential",
     "Gamma",
     "Geometric",
@@ -64,9 +74,11 @@ __all__ = [
     "Uniform",
     "UniformDraw",
     "condition",
+    "diagnose_chains",
     "factor",
     "flip",
     "infer",
+    "infer_chains",
     "mem",
     "model",
     "observe",

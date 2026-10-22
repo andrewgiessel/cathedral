@@ -46,7 +46,9 @@ pip install cathedral
 pip install cathedral[viz]
 ```
 
-Requires Python >= 3.10, numpy, and scipy.
+Cathedral requires Python >= 3.10, NumPy, and SciPy. The `viz` extra installs
+Matplotlib, Graphviz's Python package, and ArviZ. For development, run
+`uv sync --group dev`, then `uv run pytest`.
 
 ## Bayesian Inference in Action
 
@@ -55,6 +57,8 @@ Requires Python >= 3.10, numpy, and scipy.
 A disease has 1% base rate, but produces two symptoms with high probability. What happens when a patient presents with both?
 
 ```python
+from cathedral import condition, flip, infer, model
+
 @model
 def medical_diagnosis():
     disease = flip(0.01)
@@ -68,6 +72,7 @@ def medical_diagnosis():
     return disease
 
 posterior = infer(medical_diagnosis, method="enumerate")
+print(posterior.probability())  # P(disease | both symptoms), about 0.59
 ```
 
 ![Posterior probability for the medical diagnosis example](assets/posterior_medical.png)
@@ -77,6 +82,11 @@ Despite the low base rate, observing both symptoms raises P(disease) to 59% — 
 ### Bayesian Linear Regression
 
 ```python
+from cathedral import Normal, infer, model, observe, sample
+
+xs = [0.0, 1.0, 2.0, 3.0]
+ys = [1.0, 3.1, 5.0, 7.2]
+
 @model
 def line_model():
     slope = sample(Normal(0, 5), name="slope")
@@ -86,15 +96,18 @@ def line_model():
     return {"slope": slope, "intercept": intercept}
 
 posterior = infer(line_model, method="importance", num_samples=10000)
+print(posterior.mean("slope"))
 ```
 
 ![Bayesian linear regression posterior visualization](assets/linear_regression.png)
 
 ### Metropolis-Hastings: Inferring a Gaussian Mean
 
-Five observations near 3.0. MH explores the posterior, and the samples match the analytical solution:
+Five observations near 3.0. MH explores the posterior, though its prior-resampling proposal may mix slowly:
 
 ```python
+from cathedral import Normal, infer, model, observe, sample
+
 @model
 def gaussian_mean():
     mu = sample(Normal(0, 5), name="mu")
@@ -103,6 +116,7 @@ def gaussian_mean():
     return mu
 
 posterior = infer(gaussian_mean, method="mh", num_samples=2000, burn_in=500)
+print(posterior.mean())
 ```
 
 ![Metropolis-Hastings trace and posterior diagnostics](assets/mh_trace.png)
@@ -112,7 +126,18 @@ posterior = infer(gaussian_mean, method="mh", num_samples=2000, burn_in=500)
 Observed 10 heads in a row. Is the coin fair, or biased? Bayes factors quantify the evidence:
 
 ```python
+from cathedral import Bernoulli, infer, model, observe
 from cathedral.checks import compare_models
+
+@model
+def fair_coin():
+    for _ in range(10):
+        observe(Bernoulli(0.5), True)
+
+@model
+def biased_coin():
+    for _ in range(10):
+        observe(Bernoulli(0.9), True)
 
 p_fair = infer(fair_coin, method="importance", num_samples=10000)
 p_biased = infer(biased_coin, method="importance", num_samples=10000)
@@ -126,6 +151,8 @@ print(compare_models({"fair_coin": p_fair, "biased_coin": p_biased}))
 Unlike PyMC or Stan, Cathedral supports **stochastic control flow** — different executions can have entirely different random variables. The toolkit tracks which addresses appear in which traces:
 
 ```python
+from cathedral import flip, model
+
 @model
 def animal():
     is_bird = flip(0.3, name="is_bird")
@@ -159,12 +186,19 @@ def animal():
 
 ## Inference Methods
 
-| Method                  | Syntax                          | Best for                                               |
-| ----------------------- | ------------------------------- | ------------------------------------------------------ |
-| **Rejection sampling**  | `infer(m, method="rejection")`  | Small discrete models with `condition()`               |
-| **Importance sampling** | `infer(m, method="importance")` | Continuous models with `observe()`                     |
-| **Single-site MH**      | `infer(m, method="mh")`         | Complex models, rare conditions, many latent variables |
-| **Exact enumeration**   | `infer(m, method="enumerate")`  | Small discrete models where you want exact answers     |
+| Method                  | Syntax                          | Best for                                                         |
+| ----------------------- | ------------------------------- | ---------------------------------------------------------------- |
+| **Rejection sampling**  | `infer(m, method="rejection")`  | Models conditioned with `condition()`; rare events can be costly |
+| **Importance sampling** | `infer(m, method="importance")` | Prior sampling weighted by `observe()` / `factor()` scores       |
+| **Single-site MH**      | `infer(m, method="mh")`         | Models where prior-proposal chain moves are effective            |
+| **Enumeration**         | `infer(m, method="enumerate")`  | Small models with finite-support choices                         |
+
+These are the implemented inference engines; Cathedral does not currently
+provide NUTS/gradient-based inference or a multi-chain runner. MH uses a
+single-site proposal that redraws the selected choice from its prior, which
+can mix poorly for concentrated or correlated posteriors. Enumeration is
+exhaustive by default; `max_executions` truncates the search, so results are
+then approximate. Enumeration requires finite-support choices.
 
 ### Reproducible Inference
 
@@ -189,7 +223,7 @@ Importance sampling defaults to resampling, which returns an unweighted posterio
 posterior = infer(my_model, method="importance", num_samples=5000)
 ```
 
-For diagnostics or lower-variance analysis, you can keep weighted traces:
+For diagnostics and weighted summaries, you can retain importance weights:
 
 ```python
 posterior = infer(
@@ -212,7 +246,9 @@ posterior.ess            # effective sample size from the weights
 
 **Multivariate:** `Dirichlet`
 
-All distributions support `.sample()`, `.log_prob(value)`, and `.prob(value)`. Discrete distributions also support `.support()` for enumeration.
+All distributions support `.sample()`, `.log_prob(value)`, and `.prob(value)`.
+Finite-support distributions provide `.support()` for enumeration; continuous
+and infinite-support distributions do not.
 
 ## Posterior Analysis
 
@@ -245,24 +281,25 @@ You can continue a posterior with the same inference method:
 posterior = posterior.extend(my_model, num_samples=1000, seed=456)
 ```
 
-For rejection, importance, and MH, extension appends new traces to the existing posterior. For enumeration, extension recomputes the enumerated path set instead of duplicating exact paths.
+For rejection, importance, and MH, extension appends new traces to the existing posterior. For enumeration, extension recomputes the enumerated path set instead of duplicating exact paths. Pass the same model arguments and external `condition` predicate again when extending; they are not stored in the posterior. MH extension starts from its last retained trace, but a saved posterior does not preserve sampler or RNG state.
 
 ## Diagnostics & Model Understanding
 
-Every inference run returns diagnostic metadata automatically:
+Inference returns the diagnostic metadata available for that method:
 
 ```python
 posterior = infer(sprinkler, method="rejection", num_samples=1000)
 print(posterior.diagnostics())
+# Example output (attempts and acceptance rate vary):
 # Posterior: 1000 samples
 #   method: rejection
-#   attempts: 1694
-#   acceptance rate: 0.5903
+#   attempts: ...
+#   acceptance rate: ...
 #   fixed structure: True
 
-posterior.acceptance_rate          # fraction accepted (rejection/MH)
-posterior.ess                     # effective sample size (importance/enumerate)
-posterior.log_marginal_likelihood  # for model comparison
+posterior.acceptance_rate          # rejection acceptance or MH move rate
+posterior.ess                      # weight-based ESS (importance/enumeration)
+posterior.log_marginal_likelihood  # estimate for importance/enumeration
 posterior.has_fixed_structure      # all traces share the same addresses?
 ```
 
@@ -275,7 +312,7 @@ pp = prior_predictive(sprinkler, num_samples=5000)
 
 # How hard is your inference problem?
 rate = condition_acceptance_rate(sprinkler, num_samples=10000)
-# "Condition satisfied 58.5% of the time"
+# Returns the estimated fraction of prior executions accepted (0 to 1).
 ```
 
 ### Trace Visualization
@@ -302,9 +339,9 @@ dot = trace_to_dot(posterior.traces[0])  # Graphviz DOT output
 from cathedral.plots import plot_posterior, plot_weights, plot_trace_values, plot_ess
 
 plot_posterior(posterior, key="rain")
-plot_weights(posterior)          # importance weight distribution
-plot_trace_values(posterior, "mu")  # MH mixing diagnostic
-plot_ess(posterior)              # ESS per address
+plot_weights(importance_posterior)  # requires an importance posterior
+plot_trace_values(mh_posterior, "mu")  # trace values; useful for checking MH mixing
+plot_ess(posterior)              # fixed-structure traces; autocorrelation-based ESS per address
 ```
 
 ### ArviZ Integration (requires `cathedral[viz]`)
@@ -313,6 +350,11 @@ plot_ess(posterior)              # ESS per address
 idata = posterior.to_arviz()
 # → arviz.InferenceData with posterior group, ready for az.plot_trace(), etc.
 ```
+
+`to_arviz()` requires fixed-structure traces with numeric choice values and
+exports one chain. It does not create independent chains or supply convergence
+diagnostics. Use Cathedral's trace and structure visualizers for variable-
+structure traces.
 
 ## Examples
 
@@ -346,7 +388,7 @@ The script exercises representative rejection and importance models and reports:
 - ESS and ESS/sec for importance-based cases
 - averages across repeated runs
 
-The `v0.3` benchmark work also evaluated thread-based parallel rejection and importance sampling. It was deferred because the tested workloads were mostly flat or slightly slower with worker threads; seeded serial inference remains the supported `v0.3` path.
+The benchmark runner currently exercises serial inference; thread-based parallel sampling is not implemented.
 
 Current benchmark cases:
 

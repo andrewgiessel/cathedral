@@ -7,7 +7,7 @@ global ``numpy.random`` state.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator as GeneratorIterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 
@@ -36,7 +36,7 @@ def get_active_rng() -> Generator:
 
 
 @contextmanager
-def using_rng(rng: Generator) -> Iterator[Generator]:
+def using_rng(rng: Generator) -> GeneratorIterator[Generator, None, None]:
     """Temporarily install *rng* as the active Cathedral RNG."""
     token = _ACTIVE_RNG.set(rng)
     try:

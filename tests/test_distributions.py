@@ -5,6 +5,7 @@ import math
 import numpy as np
 import pytest
 
+from cathedral import Multinomial as PublicMultinomial
 from cathedral.distributions import (
     Bernoulli,
     Beta,
@@ -15,6 +16,7 @@ from cathedral.distributions import (
     Gamma,
     HalfNormal,
     LogNormal,
+    Multinomial,
     Normal,
     Poisson,
     StudentT,
@@ -229,6 +231,94 @@ class TestBinomial:
             Binomial(-1, 0.5)
         with pytest.raises(ValueError):
             Binomial(3, -0.1)
+
+
+class TestMultinomial:
+    def test_sample_is_valid_count_vector(self):
+        d = Multinomial(10, [0.2, 0.3, 0.5])
+        for _ in range(100):
+            sample = d.sample()
+            assert isinstance(sample, np.ndarray)
+            assert sample.shape == (3,)
+            assert np.issubdtype(sample.dtype, np.integer)
+            assert np.all(sample >= 0)
+            assert sample.sum() == 10
+
+    def test_log_prob(self):
+        d = Multinomial(3, [0.25, 0.75])
+        expected = math.log(3 * 0.25**2 * 0.75)
+        assert math.isclose(d.log_prob([2, 1]), expected)
+
+    def test_zero_trials_and_zero_probability_categories(self):
+        d = Multinomial(0, [0.0, 0.25, 0.75])
+        np.testing.assert_array_equal(d.sample(), [0, 0, 0])
+        assert d.log_prob([0, 0, 0]) == 0.0
+        assert Multinomial(2, [0.0, 1.0]).log_prob([1, 1]) == -math.inf
+
+    @pytest.mark.parametrize("n", [math.nan, math.inf, -math.inf])
+    def test_rejects_non_finite_trial_count(self, n):
+        with pytest.raises(ValueError, match="finite non-negative integer"):
+            Multinomial(n, [0.5, 0.5])
+
+    @pytest.mark.parametrize("probs", [[0.2, 0.3, 0.5000002], [0.2, 0.3, 0.4999998]])
+    def test_normalizes_probabilities_accepted_within_sum_tolerance(self, probs):
+        d = Multinomial(4, probs)
+        assert math.isclose(float(d.probs.sum()), 1.0, abs_tol=1e-15)
+        for _ in range(10):
+            assert d.sample().sum() == 4
+        assert math.isfinite(d.log_prob([1, 1, 2]))
+
+    def test_not_enumerable_and_exported_at_package_top_level(self):
+        assert PublicMultinomial is Multinomial
+        assert Multinomial(1, [0.5, 0.5]).support() is None
+
+    def test_seeded_inference_samples_array_values_consistently(self):
+        from cathedral import infer, model, sample
+
+        @model
+        def counts():
+            return sample(Multinomial(5, [0.2, 0.3, 0.5]), name="counts")
+
+        first = infer(counts, method="importance", num_samples=20, seed=71)
+        second = infer(counts, method="importance", num_samples=20, seed=71)
+        for left, right in zip(first.samples, second.samples, strict=True):
+            np.testing.assert_array_equal(left, right)
+            assert left.sum() == 5
+        for trace in first.traces:
+            assert math.isclose(trace.log_joint, Multinomial(5, [0.2, 0.3, 0.5]).log_prob(trace.result))
+
+    @pytest.mark.parametrize(
+        "counts",
+        [
+            [-1, 4],
+            [1.5, 1.5],
+            [1, 1],
+            [1, 1, 1],
+            [math.nan, 3],
+            ["invalid", "counts"],
+            [1 + 0j, 2 + 0j],
+            [10**400, 0],
+        ],
+    )
+    def test_log_prob_outside_support(self, counts):
+        assert Multinomial(3, [0.25, 0.75]).log_prob(counts) == -math.inf
+
+    @pytest.mark.parametrize(
+        ("n", "probs"),
+        [
+            (-1, [0.5, 0.5]),
+            (1.5, [0.5, 0.5]),
+            (3, []),
+            (3, [[0.5, 0.5]]),
+            (3, [0.5, -0.5, 1.0]),
+            (3, [0.25, 0.25]),
+            (3, [0.5, math.nan]),
+            (3, [1 + 0j, 0 + 0j]),
+        ],
+    )
+    def test_invalid_params(self, n, probs):
+        with pytest.raises(ValueError):
+            Multinomial(n, probs)
 
 
 class TestDirichlet:

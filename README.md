@@ -186,23 +186,60 @@ def animal():
 
 ## Inference Methods
 
-| Method                  | Syntax                          | Best for                                                         |
-| ----------------------- | ------------------------------- | ---------------------------------------------------------------- |
-| **Rejection sampling**  | `infer(m, method="rejection")`  | Models conditioned with `condition()`; rare events can be costly |
-| **Importance sampling** | `infer(m, method="importance")` | Prior sampling weighted by `observe()` / `factor()` scores       |
-| **Single-site MH**      | `infer(m, method="mh")`         | Models where prior-proposal chain moves are effective            |
-| **Enumeration**         | `infer(m, method="enumerate")`  | Small models with finite-support choices                         |
+| Method                  | Syntax                           | Best for                                                         |
+| ----------------------- | -------------------------------- | ---------------------------------------------------------------- |
+| **Rejection sampling**  | `infer(m, method="rejection")`   | Models conditioned with `condition()`; rare events can be costly |
+| **Importance sampling** | `infer(m, method="importance")`  | Prior sampling weighted by `observe()` / `factor()` scores       |
+| **Single-site MH**      | `infer(m, method="mh")`          | General prior-resampling fallback                                |
+| **Adaptive MH**         | `infer(m, method="adaptive_mh")` | Named, fixed-structure scalar choices and continuous blocks      |
+| **Enumeration**         | `infer(m, method="enumerate")`   | Small models with finite-support choices                         |
 
-These are the implemented inference engines; Cathedral does not currently
-provide NUTS/gradient-based inference or a multi-chain runner. MH uses a
-single-site proposal that redraws the selected choice from its prior, which
-can mix poorly for concentrated or correlated posteriors. Enumeration is
+These are the inference methods. `adaptive_mh` adds warmup adaptation and
+support-aware scalar or user-declared continuous block proposals for explicitly
+named, replay-safe, fixed-structure numeric choices. It can optionally mix in
+one-site prior resimulation (`prior_resimulation=True`). This restricted method
+is not a general kernel/plugin framework and does not support every distribution
+or variable-structure trace. The original `mh` method remains a prior-resampling
+single-site fallback and can mix poorly for concentrated or correlated
+posteriors. `infer_chains` runs independent sequential `adaptive_mh` chains and
+provides rank-normalized split/folded R-hat, ESS, and MCSE diagnostics for scalar
+queries; it is not parallel. Cathedral does not currently provide
+NUTS/gradient-based inference, Gibbs or slice kernels, or SMC. The
+[non-NUTS inference document](docs/non-nuts-inference.md) is a proposal, not an
+implemented API. Enumeration is
 exhaustive by default; `max_executions` truncates the search, so results are
-then approximate. Enumeration requires finite-support choices.
+then approximate. Enumeration requires finite-support choices exposed by the
+distribution's `.support()` method.
+
+### Adaptive MH in Practice
+
+Adaptive MH requires explicitly named scalar choices in a replay-safe,
+fixed-structure model. Declare continuous blocks for correlated choices:
+
+```python
+from cathedral import Normal, infer, model, observe, sample
+
+@model
+def correlated_means():
+    x = sample(Normal(0, 1), name="x")
+    y = sample(Normal(0, 1), name="y")
+    observe(Normal(x + y, 0.1), 1.0)
+    return {"x": x, "y": y}
+
+posterior = infer(
+    correlated_means,
+    method="adaptive_mh",
+    num_samples=2000,
+    warmup=500,
+    blocks=[("x", "y")],
+    seed=123,
+)
+print(posterior.mean("x"), posterior.mean("y"))
+```
 
 ### Reproducible Inference
 
-Rejection, importance, and MH support seeded execution:
+Rejection, importance, `mh`, and `adaptive_mh` support seeded execution:
 
 ```python
 posterior = infer(my_model, method="importance", num_samples=5000, seed=123)
@@ -214,6 +251,25 @@ Reproducibility contract:
 - Seeded reproducibility covers random choices made through Cathedral primitives and distributions.
 - Raw `np.random` calls inside user model code are outside Cathedral's RNG context.
 - Unseeded runs continue to use Cathedral's internal default RNG behavior.
+
+For independent chains with adaptive MH, seed the chain runner and summarize a
+scalar estimand:
+
+```python
+from cathedral import infer_chains, model
+from cathedral.distributions import Normal
+from cathedral.primitives import observe, sample
+
+@model
+def location_model():
+    location = sample(Normal(0, 1), name="location")
+    observe(Normal(location, 1), 0.5)
+    return location
+
+chains = infer_chains(location_model, num_chains=2, num_samples=100, warmup=50, seed=123)
+summary = chains.summarize(lambda value: value, name="location")
+print(summary.mean, summary.diagnostics.rhat, summary.mcse_mean)
+```
 
 ### Weighted Importance Sampling
 
@@ -244,11 +300,16 @@ posterior.ess            # effective sample size from the weights
 
 **Discrete:** `Bernoulli`, `Categorical`, `UniformDraw`, `Poisson`, `Geometric`, `Binomial`
 
-**Multivariate:** `Dirichlet`
+**Multivariate:** `Dirichlet`, `Multinomial`
 
 All distributions support `.sample()`, `.log_prob(value)`, and `.prob(value)`.
-Finite-support distributions provide `.support()` for enumeration; continuous
-and infinite-support distributions do not.
+Finite-support distributions expose `.support()` for enumeration; continuous,
+infinite-support, and `Multinomial` distributions do not. Multinomial returns
+an integer count array with one entry per category, summing to `n`. `n` must
+be a non-negative integer; `probs` must be a non-empty sequence summing to 1
+within relative tolerance `1e-6` (accepted values are normalized). It has no
+finite `.support()` for enumeration; use importance sampling or legacy `mh`,
+not `adaptive_mh`, which does not support array-valued choices.
 
 ## Posterior Analysis
 
@@ -281,7 +342,7 @@ You can continue a posterior with the same inference method:
 posterior = posterior.extend(my_model, num_samples=1000, seed=456)
 ```
 
-For rejection, importance, and MH, extension appends new traces to the existing posterior. For enumeration, extension recomputes the enumerated path set instead of duplicating exact paths. Pass the same model arguments and external `condition` predicate again when extending; they are not stored in the posterior. MH extension starts from its last retained trace, but a saved posterior does not preserve sampler or RNG state.
+For rejection, importance, and MH, extension appends new traces to the existing posterior. For enumeration, extension recomputes the enumerated path set instead of duplicating exact paths. Pass the same model arguments and external `condition` predicate again when extending; they are not stored in the posterior. Legacy `mh` extension starts from its last retained trace. `adaptive_mh` stores its sampler and RNG state in the posterior and resumes it with `.extend()` (do not pass a new seed).
 
 ## Diagnostics & Model Understanding
 
@@ -389,6 +450,16 @@ The script exercises representative rejection and importance models and reports:
 - averages across repeated runs
 
 The benchmark runner currently exercises serial inference; thread-based parallel sampling is not implemented.
+
+A second runner compares legacy and adaptive MH on concentrated, correlated,
+and mixed discrete/continuous targets:
+
+```bash
+uv run python benchmarks/benchmark_local_mh.py
+```
+
+It reports sampling diagnostics including R-hat, ESS/sec, and MCSE; these are
+benchmark fixtures, not performance guarantees.
 
 Current benchmark cases:
 

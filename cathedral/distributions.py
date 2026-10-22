@@ -297,6 +297,72 @@ class Binomial(Distribution):
         return f"Binomial(n={self.n}, p={self.p})"
 
 
+class Multinomial(Distribution):
+    """Multinomial distribution over counts in a fixed number of categories."""
+
+    def __init__(self, n: int, probs: list[float] | np.ndarray):
+        try:
+            valid_n = math.isfinite(n) and n >= 0 and n == int(n)
+        except (OverflowError, TypeError, ValueError):
+            valid_n = False
+        if not valid_n:
+            raise ValueError(f"n must be a finite non-negative integer, got {n}")
+
+        try:
+            raw_probs = np.asarray(probs)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("probs must be a numeric sequence") from exc
+        if np.iscomplexobj(raw_probs):
+            raise ValueError("probs must be real-valued")
+        try:
+            probs_arr = np.asarray(raw_probs, dtype=float)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("probs must be a numeric sequence") from exc
+        if probs_arr.ndim != 1 or probs_arr.size == 0:
+            raise ValueError("probs must be a non-empty one-dimensional sequence")
+        if not np.all(np.isfinite(probs_arr)):
+            raise ValueError("probs must contain only finite values")
+        if np.any(probs_arr < 0):
+            raise ValueError("probs must be non-negative")
+
+        total = float(probs_arr.sum())
+        if not math.isclose(total, 1.0, rel_tol=1e-6):
+            raise ValueError(f"probs must sum to 1, got {total}")
+
+        self.n = int(n)
+        # Keep both sampling backends and the PMF consistent when accepting
+        # probabilities whose sum is within the documented tolerance.
+        self.probs = probs_arr / total
+        self.probs.flags.writeable = False
+        self._dist = stats.multinomial(n=self.n, p=self.probs)
+
+    def sample(self) -> np.ndarray:
+        return get_active_rng().multinomial(self.n, self.probs)
+
+    def log_prob(self, value: Any) -> float:
+        try:
+            raw_counts = np.asarray(value)
+            if np.iscomplexobj(raw_counts):
+                return -math.inf
+            counts = np.asarray(raw_counts, dtype=float)
+        except (TypeError, ValueError, OverflowError):
+            return -math.inf
+
+        if counts.shape != self.probs.shape:
+            return -math.inf
+        if not np.all(np.isfinite(counts)):
+            return -math.inf
+        if np.any(counts < 0) or np.any(counts != np.floor(counts)):
+            return -math.inf
+        if float(counts.sum()) != self.n:
+            return -math.inf
+
+        return float(self._dist.logpmf(counts.astype(int)))
+
+    def __repr__(self) -> str:
+        return f"Multinomial(n={self.n}, probs={self.probs.tolist()})"
+
+
 class UniformDraw(Distribution):
     """Uniform draw from a finite set of values."""
 
